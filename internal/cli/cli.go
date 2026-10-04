@@ -36,19 +36,26 @@ Keys:
   type              filter the worktrees (branch, name or path)
   ↑ ↓  ^p ^n        move          PgUp PgDn Home End  page / ends
   Enter             open the diff full screen; Esc comes back
-  ^s                switch to the selected worktree (prints the jump)
+  Ctrl+Enter  ^s    switch to the selected worktree (prints the jump);
+                    Ctrl+Enter needs a terminal that can tell it from
+                    Enter (kitty keyboard protocol or xterm
+                    modifyOtherKeys, both requested on startup)
+  ^o                projects: pick another repo from wt's registry
+                    (wt link -r); Enter opens it here, Esc closes
   Esc               clear the filter; with none, quit      ^c  quit
   ^d ^u  ^f ^b      scroll the diff by half / full page    ^e ^y  by line
   ^t                toggle the diff: uncommitted changes (git diff HEAD)
                     or what the branch adds over its base (base...HEAD)
-  ^o                open the diff in git's own pager (core.pager)
+  ^g                open the diff in git's own pager (core.pager)
   Tab               move the keyboard to the diff pane, split view kept
   ^r  F5            refresh now (the list refreshes itself every 2s)
   ^z                suspend
 
 In the diff (full screen or focused): j k d u f b g G scroll like less,
-← → pan long lines, Enter switches to the worktree from full screen,
-Esc or q return to the list.
+← → pan long lines, Ctrl+Enter or ^s switch to the worktree, Esc or q
+return to the list.
+
+Started outside a repository, wt-ui opens on the project picker.
 
 Env: NO_COLOR disables colors; WT_JUMP=json prints the jump as one JSON
 line ({"cd":…,"home":…}) instead of shell code, for editor integrations.

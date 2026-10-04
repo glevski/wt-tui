@@ -83,10 +83,14 @@ func (t *Terminal) Write(s string) { _, _ = t.tty.WriteString(s) }
 
 // Screen control sequences: the alternate screen keeps the shell's scrollback
 // intact, the synchronized-output pair makes a frame appear at once on
-// terminals that support it (others ignore it).
+// terminals that support it (others ignore it). Entering the screen also
+// asks the terminal to tell Ctrl+Enter from Enter: the kitty keyboard
+// protocol's "disambiguate" mode (pushed on the alternate screen's own
+// stack and popped before leaving it) and xterm's modifyOtherKeys; a
+// terminal without either ignores the request and Ctrl+Enter stays Enter.
 const (
-	EnterScreen = "\x1b[?1049h\x1b[?25l"
-	LeaveScreen = "\x1b[?25h\x1b[?1049l"
+	EnterScreen = "\x1b[?1049h\x1b[?25l\x1b[>1u\x1b[>4;2m"
+	LeaveScreen = "\x1b[>4;0m\x1b[<u\x1b[?25h\x1b[?1049l"
 	BeginFrame  = "\x1b[?2026h\x1b[H"
 	EndFrame    = "\x1b[?2026l"
 )

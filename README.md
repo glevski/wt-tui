@@ -3,7 +3,8 @@
 An interactive, two-pane worktree browser for git, built as a companion to
 [wt](https://github.com/glevski/wt): the selected worktree's diff on the
 left, the repo's worktrees on the right, most recently used first. Type to
-filter, Enter to read the diff full screen, `^s` to jump there.
+filter, Enter to read the diff full screen, Ctrl+Enter to jump there, `^o`
+to hop to another project.
 
 ```
  wt  ~/code/acme  feature/auth-session @ 8b7d2e0                              8 worktrees · 4 dirty
@@ -18,7 +19,7 @@ filter, Enter to read the diff full screen, `^s` to jump there.
 │  import type { User } from "../types";                                   ││   spike/tui-ratatui     ● ↑14      e5f60b2  2w │
 │ …                                                                        ││   release/0.4                      0a8c7d1 1mo │
 │                                                                          ││   hotfix/path-escape          ↓40  b3d91f6 2mo │
-╰──────────────────────────────────────────────────────────────────────────╯╰── ↑↓ move · ↵ diff · ^s switch · esc clear ─╯
+╰──────────────────────────────────────────────────────────────────────────╯╰── ↑↓ move · ↵ diff · ^↵ switch · esc clear ─╯
 ```
 
 Stdlib-only Go, one binary, no configuration. With wt installed it reads
@@ -95,11 +96,22 @@ The screen is split 66% / 34%:
 Typing filters the list — every word you type has to occur in the branch,
 the worktree's directory name or its path. The selection follows the
 filter, and the diff follows the selection. Enter opens the diff **full
-screen**, hiding the list; Esc brings the list back. Enter goes one level
-deeper each time — list, full-screen diff, then the worktree itself — and
-`^s` switches directly from anywhere. Everything refreshes itself every two
-seconds (`git status` per worktree, in parallel, with `GIT_OPTIONAL_LOCKS=0`
-so it never fights your own git for the index lock).
+screen**, hiding the list; Esc brings the list back. **Ctrl+Enter switches**
+to the selected worktree from the list or from the full-screen diff and
+leaves the program; `^s` does the same and is the fallback for terminals
+that cannot tell Ctrl+Enter from Enter (wt-ui asks for the kitty keyboard
+protocol and xterm's `modifyOtherKeys` on startup, which kitty, WezTerm,
+foot, Ghostty, iTerm2, Alacritty and xterm understand). Everything refreshes
+itself every two seconds (`git status` per worktree, in parallel, with
+`GIT_OPTIONAL_LOCKS=0` so it never fights your own git for the index lock).
+
+### Projects
+
+`^o` opens the **project picker**: a modal listing every repo registered
+with `wt link -r` (wt's `wt.project.<name>` global config entries), with
+its path and worktree count, the one on screen starred. Type to filter,
+Enter loads that repo's worktrees into the browser, Esc closes the picker.
+Started outside any repository, wt-ui opens on the picker directly.
 
 ### Keys
 
@@ -109,12 +121,13 @@ so it never fights your own git for the index lock).
 | `↑` `↓`, `^p` `^n` | move the selection |
 | `PgUp` `PgDn` `Home` `End` | page the list / jump to its ends |
 | `Enter` | open the diff full screen (Esc comes back) |
-| `^s` | switch to the selected worktree |
+| `Ctrl+Enter`, `^s` | switch to the selected worktree |
+| `^o` | project picker: Enter opens a project, Esc closes |
 | `Esc` | clear the filter; with none, quit (`^c` always quits) |
 | `^d` `^u` | scroll the diff half a page |
 | `^f` `^b`, `^e` `^y` | scroll the diff a page / a line |
 | `^t` | toggle the diff: uncommitted changes ↔ branch vs its base |
-| `^o` | open the diff in git's pager |
+| `^g` | open the diff in git's pager |
 | `Tab`, `→` | move the keyboard to the diff pane, keeping the split |
 | `^r`, `F5` | refresh now |
 | `^z` | suspend |
@@ -122,8 +135,9 @@ so it never fights your own git for the index lock).
 In the diff, full screen or focused, the keys are less's: `j` `k` scroll,
 `d` `u` half a page, `f` `b` `Space` a page, `g` `G` to the ends, `←` `→`
 (or `h` `l`) pan long lines, `0` back to the left edge. `Enter` opens full
-screen from the split view and switches to the worktree from full screen;
-`Esc`, `q`, `Tab` or `/` return to the list.
+screen from the split view and scrolls a line in full screen; `Ctrl+Enter`
+or `^s` switch to the worktree; `Esc`, `q`, `Tab` or `/` return to the
+list.
 
 ## Scripting and editor integration
 

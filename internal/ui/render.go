@@ -79,13 +79,13 @@ func (m *Model) Render() []string {
 	lines = append(lines, m.titleBar())
 	left := m.renderDiffPane(l)
 	if m.Fullscreen {
-		return append(lines, left...)
+		return m.overlayPicker(append(lines, left...))
 	}
 	right := m.renderListPane(l)
 	for i := 0; i < l.paneH; i++ {
 		lines = append(lines, left[i]+right[i])
 	}
-	return lines
+	return m.overlayPicker(lines)
 }
 
 // titleBar: "wt  ~/code/acme  feature/auth @ 8b7d2e0" with the counts
@@ -159,9 +159,9 @@ func (m *Model) renderDiffPane(l layout) []string {
 	var hints string
 	switch {
 	case m.Fullscreen:
-		hints = fitHints([]string{"↵ switch", "esc back", "j k scroll", "^d ^u half page", "g G ends", "← → pan", "^t mode", "^o pager"}, l.leftW-6)
+		hints = fitHints([]string{"^↵ switch", "esc back", "j k scroll", "^d ^u half page", "g G ends", "← → pan", "^t mode", "^g pager"}, l.leftW-6)
 	case m.Focus == PaneDiff:
-		hints = fitHints([]string{"↵ full screen", "^s switch", "j k scroll", "^d ^u half page", "g G ends", "← → pan", "esc list"}, l.leftW-6)
+		hints = fitHints([]string{"↵ full screen", "^↵ switch", "j k scroll", "^d ^u half page", "g G ends", "← → pan", "esc list"}, l.leftW-6)
 	}
 	rows = append(rows, border("╰", "╯", l.leftW, "", hints, style))
 	return rows
@@ -309,7 +309,7 @@ func (m *Model) renderListPane(l layout) []string {
 
 	var hints string
 	if m.Focus == PaneList {
-		hints = fitHints([]string{"↑↓ move", "↵ diff", "^s switch", "esc clear", "^d ^u scroll", "^t mode", "^o pager", "tab focus"}, l.rightW-6)
+		hints = fitHints([]string{"↑↓ move", "↵ diff", "^↵ switch", "esc clear", "^o projects", "^d ^u scroll", "^t mode", "^g pager"}, l.rightW-6)
 	}
 	rows = append(rows, border("╰", "╯", l.rightW, "", hints, style))
 	return rows

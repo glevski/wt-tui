@@ -1,6 +1,10 @@
 package term
 
-import "unicode/utf8"
+import (
+	"strconv"
+	"strings"
+	"unicode/utf8"
+)
 
 // KeyKind names a key press; printable characters are KeyRune, control
 // combinations KeyCtrl with the letter in Rune.
@@ -10,6 +14,7 @@ const (
 	KeyRune KeyKind = iota
 	KeyCtrl
 	KeyEnter
+	KeyCtrlEnter // needs a terminal that tells Ctrl+Enter from Enter (kitty protocol, xterm modifyOtherKeys)
 	KeyEsc
 	KeyTab
 	KeyBackTab
@@ -126,15 +131,27 @@ func parseEscape(b []byte) (Key, int) {
 }
 
 func csiKey(params string, final byte) Key {
-	// Modifier parameters (ESC [ 1 ; 5 A for Ctrl-Up) are ignored: the key
-	// counts, the modifier does not.
-	first := params
-	for i := 0; i < len(params); i++ {
-		if params[i] == ';' {
-			first = params[:i]
-			break
+	fields := strings.Split(params, ";")
+	first := fields[0]
+	switch final {
+	case 'u':
+		// kitty keyboard protocol: CSI <codepoint> ; <modifiers> u.
+		code, _ := strconv.Atoi(first)
+		mods := 0
+		if len(fields) > 1 {
+			mods, _ = strconv.Atoi(fields[1])
+		}
+		return modifiedKey(code, mods)
+	case '~':
+		if first == "27" && len(fields) == 3 {
+			// xterm modifyOtherKeys: CSI 27 ; <modifiers> ; <codepoint> ~.
+			mods, _ := strconv.Atoi(fields[1])
+			code, _ := strconv.Atoi(fields[2])
+			return modifiedKey(code, mods)
 		}
 	}
+	// Modifier parameters on the other sequences (ESC [ 1 ; 5 A for
+	// Ctrl-Up) are ignored: the key counts, the modifier does not.
 	switch final {
 	case 'A':
 		return Key{Kind: KeyUp}
@@ -165,6 +182,43 @@ func csiKey(params string, final byte) Key {
 		case "15":
 			return Key{Kind: KeyF5}
 		}
+	}
+	return Key{Kind: KeyUnknown}
+}
+
+// modifiedKey decodes a key reported with its modifier bits (1 + shift 1,
+// alt 2, ctrl 4, super 8), the encoding both the kitty protocol and
+// xterm's modifyOtherKeys share.
+func modifiedKey(code, mods int) Key {
+	if mods > 0 {
+		mods--
+	}
+	ctrl, shift := mods&4 != 0, mods&1 != 0
+	switch code {
+	case 13:
+		if ctrl {
+			return Key{Kind: KeyCtrlEnter}
+		}
+		return Key{Kind: KeyEnter}
+	case 27:
+		return Key{Kind: KeyEsc}
+	case 9:
+		if shift {
+			return Key{Kind: KeyBackTab}
+		}
+		return Key{Kind: KeyTab}
+	case 127, 8:
+		return Key{Kind: KeyBackspace}
+	}
+	if ctrl && code >= 'a' && code <= 'z' {
+		return Ctrl(rune(code))
+	}
+	if ctrl && code >= 'A' && code <= 'Z' {
+		return Ctrl(rune(code + 'a' - 'A'))
+	}
+	if mods&^1 == 0 && code >= 0x20 && code != 0x7f {
+		// Shift alone still types the character the terminal reports.
+		return Char(rune(code))
 	}
 	return Key{Kind: KeyUnknown}
 }

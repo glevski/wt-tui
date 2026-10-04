@@ -152,17 +152,17 @@ func TestActions(t *testing.T) {
 	if a := press(m, term.Key{Kind: term.KeyF5}); a != ActRefresh {
 		t.Errorf("F5 = %v", a)
 	}
-	if a := press(m, term.Ctrl('o')); a != ActNone || m.Message == "" {
-		t.Errorf("^o without a diff = %v, message %q", a, m.Message)
+	if a := press(m, term.Ctrl('g')); a != ActNone || m.Message == "" {
+		t.Errorf("^g without a diff = %v, message %q", a, m.Message)
 	}
 	key, _ := m.WantedDiff()
 	m.SetDiff(key, &repo.Diff{Untracked: []string{"x"}})
-	if a := press(m, term.Ctrl('o')); a != ActNone {
-		t.Errorf("^o with only untracked files = %v", a)
+	if a := press(m, term.Ctrl('g')); a != ActNone {
+		t.Errorf("^g with only untracked files = %v", a)
 	}
 	m.SetDiff(key, &repo.Diff{Lines: []string{"x"}})
-	if a := press(m, term.Ctrl('o')); a != ActPager {
-		t.Errorf("^o with a diff = %v", a)
+	if a := press(m, term.Ctrl('g')); a != ActPager {
+		t.Errorf("^g with a diff = %v", a)
 	}
 	press(m, term.Key{Kind: term.KeyTab})
 	if m.Focus != PaneDiff || m.Fullscreen {
@@ -210,7 +210,7 @@ func TestFullscreen(t *testing.T) {
 	if strings.Contains(screen, "worktrees 8") || strings.Contains(screen, "╮╭") || strings.Contains(screen, "type to filter") {
 		t.Errorf("list pane still drawn:\n%s", screen)
 	}
-	for _, want := range []string{"diff feature/auth-session · 1 file · +1 -0", "core.pager = less", "+x", "↵ switch · esc back"} {
+	for _, want := range []string{"diff feature/auth-session · 1 file · +1 -0", "core.pager = less", "+x", "^↵ switch · esc back"} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("full screen lacks %q:\n%s", want, screen)
 		}
@@ -219,16 +219,22 @@ func TestFullscreen(t *testing.T) {
 	if top := term.Strip(lines[1]); !strings.HasSuffix(top, "─╮") || term.Width(top) != 120 {
 		t.Errorf("top border = %q", top)
 	}
-	if a := press(m, term.Key{Kind: term.KeyEnter}); a != ActSwitch {
-		t.Errorf("enter in full screen = %v", a)
+	if a := press(m, term.Key{Kind: term.KeyEnter}); a != ActNone || m.diffTop != 0 {
+		t.Errorf("enter in full screen = %v, top %d (one line of content: nothing to scroll)", a, m.diffTop)
+	}
+	if a := press(m, term.Key{Kind: term.KeyCtrlEnter}); a != ActSwitch {
+		t.Errorf("ctrl+enter in full screen = %v", a)
 	}
 	press(m, term.Key{Kind: term.KeyEsc})
 	if m.Fullscreen || m.Focus != PaneList {
 		t.Errorf("esc: fullscreen %v focus %v", m.Fullscreen, m.Focus)
 	}
 	screen = strings.Join(stripAll(m.Render()), "\n")
-	if !strings.Contains(screen, "worktrees 8") || !strings.Contains(screen, "↵ diff · ^s switch") {
+	if !strings.Contains(screen, "worktrees 8") || !strings.Contains(screen, "↵ diff · ^↵ switch") {
 		t.Errorf("split view not back:\n%s", screen)
+	}
+	if a := press(m, term.Key{Kind: term.KeyCtrlEnter}); a != ActSwitch {
+		t.Errorf("ctrl+enter in the list = %v", a)
 	}
 	press(m, term.Key{Kind: term.KeyEnter}, term.Char('q'))
 	if m.Fullscreen {
@@ -449,7 +455,7 @@ func TestRenderContent(t *testing.T) {
 		"+import x",
 		"untracked (1):",
 		"notes.md",
-		"↑↓ move · ↵ diff · ^s switch · esc clear",
+		"↑↓ move · ↵ diff · ^↵ switch · esc clear",
 	} {
 		if !strings.Contains(all, want) {
 			t.Errorf("screen lacks %q:\n%s", want, all)
@@ -475,7 +481,7 @@ func TestRenderContent(t *testing.T) {
 
 	press(m, term.Key{Kind: term.KeyTab})
 	all = strings.Join(stripAll(m.Render()), "\n")
-	if !strings.Contains(all, "↵ full screen · ^s switch · j k scroll") || strings.Contains(all, "↵ diff") {
+	if !strings.Contains(all, "↵ full screen · ^↵ switch · j k scroll") || strings.Contains(all, "↵ diff") {
 		t.Errorf("diff-focus hints wrong:\n%s", all)
 	}
 	if !strings.Contains(all, "│ / au  ") {
@@ -491,7 +497,7 @@ func TestRenderContent(t *testing.T) {
 	// stray gap at its left end.
 	m = newModel(t, 200, 30)
 	all = strings.Join(stripAll(m.Render()), "\n")
-	if !strings.Contains(all, "↑↓ move · ↵ diff · ^s switch · esc clear · ^d ^u scroll") {
+	if !strings.Contains(all, "↑↓ move · ↵ diff · ^↵ switch · esc clear · ^o projects") {
 		t.Errorf("hints at 200 cols:\n%s", all)
 	}
 	if strings.Contains(all, "╰─  ─") {

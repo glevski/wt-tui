@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"strings"
 	"syscall"
 	"time"
@@ -21,11 +22,19 @@ const RefreshEvery = 2 * time.Second
 var ErrInterrupted = errors.New("interrupted")
 
 // Run shows the browser for the repo containing dir until the user picks a
-// worktree (returned as the jump) or leaves (nil jump).
+// worktree (returned as the jump) or leaves (nil jump). The screen comes
+// up at once with a loading note while the worktrees are read — a status
+// per worktree can take a while on a slow filesystem. Outside any
+// repository it opens on the project picker instead, when wt's registry
+// has something to pick from.
 func Run(dir string) (*Jump, error) {
-	snap, err := repo.Load(dir)
-	if err != nil {
-		return nil, err
+	inRepo := true
+	var projects []repo.Project
+	if _, err := git.Worktrees(dir); err != nil {
+		if projects = repo.Projects(dir); len(projects) == 0 {
+			return nil, err
+		}
+		inRepo = false
 	}
 	t, err := term.Open()
 	if err != nil {
@@ -33,14 +42,22 @@ func Run(dir string) (*Jump, error) {
 	}
 	defer t.Close()
 	a := &app{
-		dir:      dir,
+		cwd:      dir,
 		term:     t,
-		m:        New(snap),
+		m:        New(nil),
 		events:   make(chan event, 64),
 		readReq:  make(chan struct{}, 1),
 		cache:    map[DiffKey]*repo.Diff{},
 		inflight: map[DiffKey]bool{},
 		sem:      make(chan struct{}, 4),
+	}
+	if inRepo {
+		a.dir = dir
+		a.m.Message = "loading worktrees…"
+		a.refresh()
+	} else {
+		a.m.OpenPicker()
+		a.m.SetProjects(projects)
 	}
 	return a.run()
 }
@@ -54,6 +71,7 @@ type (
 	tickEvent     struct{}
 	quitEvent     struct{}
 	snapshotEvent struct {
+		dir  string // the repo it was loaded for; stale after a project switch
 		snap *repo.Snapshot
 		err  error
 	}
@@ -61,12 +79,16 @@ type (
 		key DiffKey
 		d   *repo.Diff
 	}
+	projectsEvent []repo.Project
 )
 
 type app struct {
-	dir  string
-	term *term.Terminal
-	m    *Model
+	cwd       string // where wt-ui was started: the registry is read from there
+	dir       string // the directory the repo on screen is loaded from, "" while none
+	term      *term.Terminal
+	m         *Model
+	startRoot string // the main checkout of the repo wt-ui was started in
+	away      bool   // the repo on screen is another project: no worktree is "current" there
 
 	events  chan event
 	readReq chan struct{} // the reader reads one chunk per request, so it is
@@ -159,6 +181,12 @@ func (a *app) handle(ev event) (jump *Jump, done bool, err error) {
 				a.refresh()
 			case ActRedraw:
 				a.resize()
+			case ActLoadProjects:
+				a.loadProjects()
+			case ActOpenProject:
+				if p, ok := a.m.PickedProject(); ok {
+					a.openProject(p)
+				}
 			case ActSuspend:
 				a.suspend(func() {
 					cont := make(chan os.Signal, 1)
@@ -179,9 +207,33 @@ func (a *app) handle(ev event) (jump *Jump, done bool, err error) {
 		a.resize()
 	case tickEvent:
 		a.refresh()
+	case projectsEvent:
+		a.m.SetProjects(ev)
 	case snapshotEvent:
+		if ev.dir != a.dir {
+			return nil, false, nil // from before a project switch
+		}
 		a.refreshing = false
+		first := a.m.Snap == nil
+		if ev.err == nil && a.away {
+			// Loaded from the project's root, so git would call the main
+			// checkout current; nothing here is where the user stands.
+			ev.snap.Current = -1
+			for i := range ev.snap.Entries {
+				ev.snap.Entries[i].Current = false
+			}
+		}
 		a.m.SetSnapshot(ev.snap, ev.err)
+		if first && ev.err != nil {
+			// The very first load failed: there is nothing to show.
+			return nil, true, ev.err
+		}
+		if ev.err == nil && !a.away && a.startRoot == "" {
+			a.startRoot = ev.snap.Root
+		}
+		if first && ev.snap.Current >= 0 {
+			a.m.selectEntry(ev.snap.Current)
+		}
 		if ev.err == nil {
 			a.cache = map[DiffKey]*repo.Diff{}
 			if key, ok := a.m.WantedDiff(); ok && a.inflight[key] {
@@ -231,14 +283,42 @@ func (a *app) resize() {
 
 // refresh reloads the worktree list in the background, one load at a time.
 func (a *app) refresh() {
-	if a.refreshing {
+	if a.refreshing || a.dir == "" {
 		return
 	}
 	a.refreshing = true
+	dir := a.dir
 	go func() {
-		snap, err := repo.Load(a.dir)
-		a.events <- snapshotEvent{snap, err}
+		snap, err := repo.Load(dir)
+		a.events <- snapshotEvent{dir, snap, err}
 	}()
+}
+
+// loadProjects reads wt's registry for the picker in the background.
+func (a *app) loadProjects() {
+	dir := a.cwd
+	go func() { a.events <- projectsEvent(repo.Projects(dir)) }()
+}
+
+// openProject points the browser at another repo: the screen empties
+// while its worktrees load, and anything still arriving for the previous
+// repo is dropped.
+func (a *app) openProject(p repo.Project) {
+	a.m.ClosePicker()
+	if a.m.Snap != nil && p.Root == a.m.Snap.Root {
+		return
+	}
+	a.m.Reset("opening " + p.Name + "…")
+	// Back in the starting repo the start directory is current again;
+	// elsewhere the project is loaded from its root.
+	if a.startRoot != "" && samePath(p.Root, a.startRoot) {
+		a.dir, a.away = a.cwd, false
+	} else {
+		a.dir, a.away = p.Root, true
+	}
+	a.cache = map[DiffKey]*repo.Diff{}
+	a.refreshing = false
+	a.refresh()
 }
 
 // ensureDiff makes sure the diff the left pane wants is loaded or loading;
@@ -305,6 +385,17 @@ func (a *app) suspend(fn func()) {
 // draw repaints the whole screen in one write — unless nothing changed
 // since the last frame, as after a background refresh that found the same
 // state.
+// samePath compares two directories with symlinks resolved.
+func samePath(x, y string) bool {
+	if rx, err := filepath.EvalSymlinks(x); err == nil {
+		x = rx
+	}
+	if ry, err := filepath.EvalSymlinks(y); err == nil {
+		y = ry
+	}
+	return x == y
+}
+
 func (a *app) draw() {
 	a.m.Now = time.Now()
 	var b strings.Builder

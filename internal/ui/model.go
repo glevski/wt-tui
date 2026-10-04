@@ -29,14 +29,16 @@ const (
 type Action int
 
 const (
-	ActNone      Action = iota
-	ActQuit             // leave without a jump
-	ActInterrupt        // Ctrl-C: leave with the interrupt exit status
-	ActSwitch           // jump to the selected worktree
-	ActPager            // open the diff in the real git pager
-	ActRefresh          // reload the worktrees now
-	ActRedraw           // repaint the screen
-	ActSuspend          // Ctrl-Z: stop the process until fg
+	ActNone         Action = iota
+	ActQuit                // leave without a jump
+	ActInterrupt           // Ctrl-C: leave with the interrupt exit status
+	ActSwitch              // jump to the selected worktree
+	ActPager               // open the diff in the real git pager
+	ActRefresh             // reload the worktrees now
+	ActRedraw              // repaint the screen
+	ActSuspend             // Ctrl-Z: stop the process until fg
+	ActLoadProjects        // the picker opened: read the registry into it
+	ActOpenProject         // load the picked project's worktrees
 )
 
 // Jump is where a switch leads: the worktree, and the repo's main checkout
@@ -69,6 +71,7 @@ type Model struct {
 	Focus      Pane
 	Fullscreen bool // the diff takes the whole width, the list is hidden
 	Mode       repo.Mode
+	Picker     *Picker // the project chooser, nil while closed
 
 	diff     *repo.Diff
 	diffKey  DiffKey
@@ -77,7 +80,8 @@ type Model struct {
 	diffLeft int
 }
 
-// New builds a model around the first snapshot.
+// New builds a model around the first snapshot, which may be nil when
+// started outside any repository.
 func New(snap *repo.Snapshot) *Model {
 	m := &Model{sel: -1, Now: time.Now()}
 	m.SetSnapshot(snap, nil)
@@ -85,6 +89,20 @@ func New(snap *repo.Snapshot) *Model {
 		m.selectEntry(snap.Current)
 	}
 	return m
+}
+
+// Reset drops the repo on screen before another one is loaded: the list
+// empties, the filter and the diff go, and the note says what is coming.
+func (m *Model) Reset(note string) {
+	m.Snap = nil
+	m.LoadErr = ""
+	m.Filter = ""
+	m.visible = m.visible[:0]
+	m.sel, m.listTop = -1, 0
+	m.diff, m.diffKey, m.lines = nil, DiffKey{}, nil
+	m.diffTop, m.diffLeft = 0, 0
+	m.Fullscreen, m.Focus = false, PaneList
+	m.Message = note
 }
 
 // SetSize records the terminal size and re-fits the scroll positions to it:
@@ -113,9 +131,12 @@ func (m *Model) SetSnapshot(snap *repo.Snapshot, err error) {
 	if e, ok := m.Selected(); ok {
 		keep = e.Path
 	}
+	if m.Snap == nil {
+		m.Message = "" // the repo a note announced has arrived
+	}
 	m.Snap = snap
 	m.applyFilter()
-	if keep != "" {
+	if keep != "" && snap != nil {
 		if i := snap.Find(keep); i >= 0 {
 			m.selectEntry(i)
 		}
@@ -183,6 +204,9 @@ func diffContent(d *repo.Diff) []string {
 // Update applies one key press and says what the application should do.
 func (m *Model) Update(k term.Key) Action {
 	m.Message = ""
+	if m.Picker != nil {
+		return m.updatePicker(k)
+	}
 	switch {
 	case k == term.Ctrl('c'):
 		return ActInterrupt
@@ -195,11 +219,14 @@ func (m *Model) Update(k term.Key) Action {
 	case k == term.Ctrl('l'):
 		return ActRedraw
 	case k == term.Ctrl('o'):
+		m.OpenPicker()
+		return ActLoadProjects
+	case k == term.Ctrl('g'):
 		return m.pager()
 	case k == term.Ctrl('t'):
 		m.toggleMode()
 		return ActNone
-	case k == term.Ctrl('s'):
+	case k == term.Ctrl('s') || k.Kind == term.KeyCtrlEnter:
 		if _, ok := m.Selected(); ok {
 			return ActSwitch
 		}
@@ -292,15 +319,13 @@ func (m *Model) updateDiff(k term.Key) Action {
 	case term.KeyEsc, term.KeyLeft:
 		m.toList()
 	case term.KeyEnter:
-		// Enter goes one level deeper each time: list → full-screen diff →
-		// the worktree itself.
+		// From the split view Enter opens full screen; in full screen it
+		// scrolls a line, as in less (Ctrl+Enter or ^s switch).
 		if !m.Fullscreen {
 			m.openFullscreen()
 			return ActNone
 		}
-		if _, ok := m.Selected(); ok {
-			return ActSwitch
-		}
+		m.scrollDiff(1)
 	case term.KeyUp:
 		m.scrollDiff(-1)
 	case term.KeyDown:
