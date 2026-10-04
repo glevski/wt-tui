@@ -142,6 +142,13 @@ screen from the split view and scrolls a line in full screen; `Ctrl+Enter`
 or `^s` switch to the worktree; `Esc`, `q`, `Tab` or `/` return to the
 list.
 
+### From wt: `wt ui`
+
+wt's `wt ui` subcommand runs wt-ui when it is installed and lets wt's own
+`wt()` function eval the jump, so `wt ui` cd's exactly like `wt ch`. wt
+does not bundle wt-ui: without it, `wt ui` says how to install it. The
+contract between the two is in [docs/wt-integration.md](docs/wt-integration.md).
+
 ## It printed `cd …` but I am still here
 
 Then you ran the binary itself. A process cannot change its parent shell's

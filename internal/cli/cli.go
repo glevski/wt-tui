@@ -111,8 +111,8 @@ func Run(args []string) int {
 	if os.Getenv("WT_UI_WRAPPER") == "" && os.Getenv("WT_JUMP") == "" && stdoutIsTerminal() {
 		// The script went to a terminal, not to the shell function that
 		// would eval it: nothing is going to change directory.
-		fmt.Fprintln(stderr, "wt-ui: that is the jump script — to have it cd you, run wt-ui through its shell function:")
-		fmt.Fprintln(stderr, `  eval "$(wt-ui init zsh)"   # or: init bash — put it in your rc file`)
+		fmt.Fprintln(stderr, "wt-ui: that is the jump script — to have it cd you, run wt-ui through a shell function:")
+		fmt.Fprintln(stderr, `  eval "$(wt-ui init zsh)"   # or: init bash — put it in your rc file; or run: wt ui`)
 	}
 	return 0
 }
