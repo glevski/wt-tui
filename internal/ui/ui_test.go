@@ -192,14 +192,16 @@ func TestActions(t *testing.T) {
 	if a := press(m, term.Ctrl('g')); a != ActPager {
 		t.Errorf("^g with a diff = %v", a)
 	}
+	// Tab belongs to the tab strip: the model leaves the keyboard where it is.
 	press(m, term.Key{Kind: term.KeyTab})
-	if m.Focus != PaneDiff || m.Fullscreen {
-		t.Error("tab did not focus the diff in the split view")
+	if m.Focus != PaneList || m.Fullscreen {
+		t.Error("tab moved the keyboard")
 	}
-	if a := press(m, term.Char('q')); a != ActNone || m.Focus != PaneList {
+	press(m, term.Key{Kind: term.KeyEnter})
+	if a := press(m, term.Char('q')); a != ActNone || m.Focus != PaneList || m.Fullscreen {
 		t.Errorf("q in the diff = %v, focus %v", a, m.Focus)
 	}
-	press(m, term.Key{Kind: term.KeyTab}, term.Char('/'))
+	press(m, term.Key{Kind: term.KeyEnter}, term.Char('/'))
 	if m.Focus != PaneList {
 		t.Error("/ did not return to the list")
 	}
@@ -210,7 +212,7 @@ func TestActions(t *testing.T) {
 	if m.Focus != PaneList || m.diffLeft != 8 {
 		t.Errorf("→ in the list: focus %v, pan %d", m.Focus, m.diffLeft)
 	}
-	press(m, term.Key{Kind: term.KeyTab}, term.Key{Kind: term.KeyLeft})
+	press(m, term.Key{Kind: term.KeyEnter}, term.Key{Kind: term.KeyLeft})
 	if m.Focus != PaneDiff || m.diffLeft != 0 {
 		t.Errorf("← in the diff: focus %v, pan %d", m.Focus, m.diffLeft)
 	}
@@ -218,7 +220,7 @@ func TestActions(t *testing.T) {
 	if m.Focus != PaneList {
 		t.Error("esc did not return to the list")
 	}
-	if a := press(m, term.Key{Kind: term.KeyTab}, term.Ctrl('s')); a != ActSwitch {
+	if a := press(m, term.Key{Kind: term.KeyEnter}, term.Ctrl('s')); a != ActSwitch {
 		t.Errorf("^s from the diff = %v", a)
 	}
 }
@@ -276,14 +278,10 @@ func TestFullscreen(t *testing.T) {
 		t.Error("q did not leave full screen")
 	}
 	press(m, term.Key{Kind: term.KeyEnter}, term.Key{Kind: term.KeyTab})
-	if m.Fullscreen || m.Focus != PaneList {
-		t.Error("tab did not leave full screen")
+	if !m.Fullscreen {
+		t.Error("tab (a tab-strip key) left full screen")
 	}
-	// From the split diff focus, Enter opens full screen rather than switching.
-	press(m, term.Key{Kind: term.KeyTab})
-	if a := press(m, term.Key{Kind: term.KeyEnter}); a != ActNone || !m.Fullscreen {
-		t.Errorf("enter from the split diff: %v, fullscreen %v", a, m.Fullscreen)
-	}
+	press(m, term.Key{Kind: term.KeyEsc})
 	// With nothing selected Enter does nothing.
 	m2 := newModel(t, 120, 30)
 	press(m2, term.Char('z'), term.Char('z'), term.Char('z'))
@@ -322,7 +320,7 @@ func TestDiffModesAndScrolling(t *testing.T) {
 	if m.diffTop != body/2+body {
 		t.Errorf("^f top = %d", m.diffTop)
 	}
-	press(m, term.Key{Kind: term.KeyTab}, term.Char('G'))
+	press(m, term.Key{Kind: term.KeyEnter}, term.Char('G'))
 	if m.diffTop != 100-body {
 		t.Errorf("G top = %d, want %d", m.diffTop, 100-body)
 	}
@@ -350,18 +348,18 @@ func TestDiffModesAndScrolling(t *testing.T) {
 	if m.diffTop != body/2 {
 		t.Errorf("reload top = %d", m.diffTop)
 	}
-	press(m, term.Ctrl('t'))
+	press(m, term.Ctrl('v'))
 	if m.Mode != repo.ModeBranch || m.Diff() != nil {
-		t.Errorf("^t: mode %v diff %v", m.Mode, m.Diff())
+		t.Errorf("^v: mode %v diff %v", m.Mode, m.Diff())
 	}
 	want, _ := m.WantedDiff()
 	m.SetDiff(want, &repo.Diff{Mode: repo.ModeBranch, Base: "main", Lines: lines})
 	if m.diffTop != 0 {
 		t.Errorf("new diff top = %d", m.diffTop)
 	}
-	press(m, term.Ctrl('t'))
+	press(m, term.Ctrl('v'))
 	if m.Mode != repo.ModeChanges {
-		t.Error("^t did not toggle back")
+		t.Error("^v did not toggle back")
 	}
 }
 
@@ -515,18 +513,10 @@ func TestRenderContent(t *testing.T) {
 		t.Errorf("filter not drawn:\n%s", all)
 	}
 
-	press(m, term.Key{Kind: term.KeyTab})
-	all = strings.Join(stripAll(m.Render()), "\n")
-	if !strings.Contains(all, "↵ full screen · ^↵ switch · j k scroll") || strings.Contains(all, "↵ diff") {
-		t.Errorf("diff-focus hints wrong:\n%s", all)
-	}
-	if !strings.Contains(all, "│ / au  ") {
-		t.Errorf("filter text lost without focus:\n%s", all)
-	}
-	press(m, term.Key{Kind: term.KeyTab}, term.Key{Kind: term.KeyEsc}, term.Key{Kind: term.KeyTab})
+	press(m, term.Key{Kind: term.KeyEsc})
 	all = strings.Join(stripAll(m.Render()), "\n")
 	if !strings.Contains(all, "│ /   type to filter") {
-		t.Errorf("placeholder shifted without focus:\n%s", all)
+		t.Errorf("placeholder after clearing the filter:\n%s", all)
 	}
 
 	// A wider pane fits more hints; a bottom border with only hints has no
@@ -575,7 +565,7 @@ func TestRenderStates(t *testing.T) {
 	if !strings.Contains(all, "bad revision") || !strings.Contains(all, "unavailable") {
 		t.Errorf("no error note:\n%s", all)
 	}
-	press(m, term.Ctrl('t'))
+	press(m, term.Ctrl('v'))
 	want, _ := m.WantedDiff()
 	m.SetDiff(want, &repo.Diff{Mode: repo.ModeBranch, Base: "main", Lines: []string{"x"}, Files: 1, Adds: 1})
 	all = strings.Join(stripAll(m.Render()), "\n")

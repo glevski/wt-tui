@@ -135,6 +135,8 @@ func TestParseKeys(t *testing.T) {
 		{"\x1b[127u", []Key{{Kind: KeyBackspace}}},
 		{"\x1b[?1u", []Key{{Kind: KeyKittyReply}}}, // the terminal supports the protocol
 		{"\x1b[?0u", []Key{{Kind: KeyKittyReply}}},
+		{"\x1b1\x1b9", []Key{{Kind: KeyAlt, Rune: '1'}, {Kind: KeyAlt, Rune: '9'}}}, // alt+digit as ESC digit
+		{"\x1b[50;3u", []Key{{Kind: KeyAlt, Rune: '2'}}},                            // alt+2 in the kitty encoding
 		{"\x1bx", nil},      // alt-x: no binding
 		{"\x1b[?1;2c", nil}, // a terminal reply: skipped whole
 		{"\x1b[?1;2cq", []Key{Char('q')}},

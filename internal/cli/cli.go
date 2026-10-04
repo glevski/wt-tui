@@ -42,13 +42,15 @@ Keys:
                     modifyOtherKeys, both requested on startup)
   ^o                projects: pick another repo from wt's registry
                     (wt link -r); Enter opens it here, Esc closes
+  ^t  ^x            open a tab (a copy of this one — ^o points it at
+                    another project), close the tab
+  Tab  Shift+Tab    next / previous tab        Alt+1…9  jump to a tab
   Esc               clear the filter; with none, quit      ^c  quit
   ^d ^u  ^f ^b      scroll the diff by half / full page    ^e ^y  by line
   ← →               pan the diff sideways
-  ^t                toggle the diff: uncommitted changes (git diff HEAD)
+  ^v                toggle the diff: uncommitted changes (git diff HEAD)
                     or what the branch adds over its base (base...HEAD)
   ^g                open the diff in git's own pager (core.pager)
-  Tab               move the keyboard to the diff pane, split view kept
   ^r  F5            refresh now (the list refreshes itself every 2s)
   ^z                suspend
 
@@ -56,6 +58,8 @@ In the diff (full screen or focused): j k d u f b g G scroll like less,
 ← → pan long lines, Ctrl+Enter or ^s switch to the worktree, Esc or q
 return to the list.
 
+Each tab is a workspace of its own: its project, worktree, filter, diff
+mode and full-screen state. The tab strip appears once there are two.
 Started outside a repository, wt-ui opens on the project picker.
 
 Env: NO_COLOR disables colors; WT_JUMP=json prints the jump as one JSON

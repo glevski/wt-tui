@@ -164,11 +164,8 @@ func (m *Model) renderDiffPane(l layout) []string {
 	}
 
 	var hints string
-	switch {
-	case m.Fullscreen:
-		hints = fitHints([]string{m.switchHint(), "esc back", "j k scroll", "^d ^u half page", "g G ends", "← → pan", "^t mode", "^g pager"}, l.leftW-6)
-	case m.Focus == PaneDiff:
-		hints = fitHints([]string{"↵ full screen", m.switchHint(), "j k scroll", "^d ^u half page", "g G ends", "← → pan", "esc list"}, l.leftW-6)
+	if m.Fullscreen {
+		hints = fitHints([]string{m.switchHint(), "esc back", "j k scroll", "^d ^u half page", "g G ends", "← → pan", "^v mode", "^g pager"}, l.leftW-6)
 	}
 	rows = append(rows, border("╰", "╯", l.leftW, "", hints, style))
 	return rows
@@ -231,7 +228,7 @@ func (m *Model) diffBody(l layout) []string {
 		return centered(l, paint(cRed, term.Truncate(d.Err, l.textW)))
 	case d.Empty() && d.Mode == repo.ModeChanges:
 		note := []string{paint(cDim, "working tree clean — nothing on top of "+e.Short())}
-		note = append(note, paint(cDim, "^t shows what the branch adds over its base"))
+		note = append(note, paint(cDim, "^v shows what the branch adds over its base"))
 		return centered(l, note...)
 	case d.Empty():
 		return centered(l, paint(cDim, e.Name+" has nothing on top of "+d.Base))
@@ -316,7 +313,7 @@ func (m *Model) renderListPane(l layout) []string {
 
 	var hints string
 	if m.Focus == PaneList {
-		hints = fitHints([]string{"↑↓ move", "↵ diff", m.switchHint(), "esc clear", "^o projects", "^d ^u scroll", "^t mode", "^g pager"}, l.rightW-6)
+		hints = fitHints([]string{"↑↓ move", "↵ diff", m.switchHint(), "esc clear", "^o projects", "^t tab", "^d ^u scroll", "^v mode", "^g pager"}, l.rightW-6)
 	}
 	rows = append(rows, border("╰", "╯", l.rightW, "", hints, style))
 	return rows

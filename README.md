@@ -74,7 +74,7 @@ The screen is split 66% / 34%:
   `$GIT_PAGER` or `$PAGER`). A scrollbar on the right edge tracks where you
   are.
 
-  `^t` switches to the **branch view**: what the branch adds over its base
+  `^v` switches to the **branch view**: what the branch adds over its base
   (`git diff <base>...HEAD`), where the base is the branch wt recorded the
   worktree was created from, else the main checkout's branch, else the
   upstream. `^o` opens whichever diff is showing in the real pager, with
@@ -108,6 +108,17 @@ confirmed it can send Ctrl+Enter, `^s switch` otherwise. Everything refreshes
 itself every two seconds (`git status` per worktree, in parallel, with
 `GIT_OPTIONAL_LOCKS=0` so it never fights your own git for the index lock).
 
+### Tabs
+
+`^t` opens a new tab — a copy of the current one, so the quickest way to
+a second worktree of the same project is `^t` and a filter; `^o` in the
+new tab points it at another project. Every tab is a workspace of its
+own: its project, selected worktree, filter, diff mode and full-screen
+state, refreshed only while it is on screen. `Tab` and `Shift+Tab` cycle,
+`Alt+1`…`Alt+9` jump (on macOS, with Option set to send Meta), `^x`
+closes. The strip at the top appears once there are two tabs and marks a
+full-screen tab with `⛶`; a single tab looks like there are none.
+
 ### Projects
 
 `^o` opens the **project picker**: a modal listing every repo registered
@@ -130,9 +141,10 @@ Started outside any repository, wt-ui opens on the picker directly.
 | `^d` `^u` | scroll the diff half a page |
 | `^f` `^b`, `^e` `^y` | scroll the diff a page / a line |
 | `←` `→` | pan the diff sideways |
-| `^t` | toggle the diff: uncommitted changes ↔ branch vs its base |
+| `^v` | toggle the diff: uncommitted changes ↔ branch vs its base |
+| `^t`, `^x` | open a tab, close the tab |
+| `Tab`, `Shift+Tab`, `Alt+1…9` | next tab, previous tab, jump to a tab |
 | `^g` | open the diff in git's pager |
-| `Tab` | move the keyboard to the diff pane, keeping the split |
 | `^r`, `F5` | refresh now |
 | `^z` | suspend |
 
@@ -140,8 +152,7 @@ In the diff, full screen or focused, the keys are less's: `j` `k` scroll,
 `d` `u` half a page, `f` `b` `Space` a page, `g` `G` to the ends, `←` `→`
 (or `h` `l`) pan long lines, `0` back to the left edge. `Enter` opens full
 screen from the split view and scrolls a line in full screen; `Ctrl+Enter`
-or `^s` switch to the worktree; `Esc`, `q`, `Tab` or `/` return to the
-list.
+or `^s` switch to the worktree; `Esc`, `q` or `/` return to the list.
 
 ### From wt: `wt ui`
 

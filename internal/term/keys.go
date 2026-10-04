@@ -30,6 +30,7 @@ const (
 	KeyPgDn
 	KeyF5
 	KeyKittyReply // the terminal's answer to the keyboard-protocol query: it supports it
+	KeyAlt        // Alt (Meta) with a digit in Rune — the tab shortcuts
 	KeyUnknown
 )
 
@@ -125,8 +126,12 @@ func parseEscape(b []byte) (Key, int) {
 		}
 		return Key{Kind: KeyUnknown}, 3
 	}
-	// ESC followed by anything else is an Alt-combination (or a stray Esc
-	// typed just before another key); neither has a binding.
+	// ESC followed by a digit is Alt+digit on terminals that send Meta as
+	// ESC. Any other Alt-combination (or a stray Esc typed just before
+	// another key) has no binding.
+	if b[1] >= '1' && b[1] <= '9' {
+		return Key{Kind: KeyAlt, Rune: rune(b[1])}, 2
+	}
 	_, size := utf8.DecodeRune(b[1:])
 	return Key{Kind: KeyUnknown}, 1 + size
 }
@@ -198,7 +203,10 @@ func modifiedKey(code, mods int) Key {
 	if mods > 0 {
 		mods--
 	}
-	ctrl, shift := mods&4 != 0, mods&1 != 0
+	ctrl, shift, alt := mods&4 != 0, mods&1 != 0, mods&2 != 0
+	if alt && !ctrl && code >= '1' && code <= '9' {
+		return Key{Kind: KeyAlt, Rune: rune(code)}
+	}
 	switch code {
 	case 13:
 		if ctrl {

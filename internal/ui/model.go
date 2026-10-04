@@ -39,6 +39,7 @@ const (
 	ActSuspend             // Ctrl-Z: stop the process until fg
 	ActLoadProjects        // the picker opened: read the registry into it
 	ActOpenProject         // load the picked project's worktrees
+	ActTabChanged          // another tab is on screen now: refresh it
 )
 
 // Jump is where a switch leads: the worktree, and the repo's main checkout
@@ -89,6 +90,20 @@ func New(snap *repo.Snapshot) *Model {
 	m.SetSnapshot(snap, nil)
 	if snap != nil && snap.Current >= 0 {
 		m.selectEntry(snap.Current)
+	}
+	return m
+}
+
+// NewTabFrom starts a tab on the same repo and selection as another one:
+// the snapshot is shared until the new tab's own refresh replaces it.
+func NewTabFrom(src *Model) *Model {
+	m := &Model{sel: -1, Now: time.Now(), Mode: src.Mode, CtrlEnter: src.CtrlEnter,
+		Width: src.Width, Height: src.Height}
+	m.SetSnapshot(src.Snap, nil)
+	if e, ok := src.Selected(); ok && m.Snap != nil {
+		if i := m.Snap.Find(e.Path); i >= 0 {
+			m.selectEntry(i)
+		}
 	}
 	return m
 }
@@ -234,19 +249,12 @@ func (m *Model) Update(k term.Key) Action {
 		return ActLoadProjects
 	case k == term.Ctrl('g'):
 		return m.pager()
-	case k == term.Ctrl('t'):
+	case k == term.Ctrl('v'):
 		m.toggleMode()
 		return ActNone
 	case k == term.Ctrl('s') || k.Kind == term.KeyCtrlEnter:
 		if _, ok := m.Selected(); ok {
 			return ActSwitch
-		}
-		return ActNone
-	case k.Kind == term.KeyTab || k.Kind == term.KeyBackTab:
-		if m.Focus == PaneDiff {
-			m.toList()
-		} else {
-			m.Focus = PaneDiff
 		}
 		return ActNone
 	case k == term.Ctrl('d'):
@@ -392,7 +400,8 @@ func (m *Model) updateDiff(k term.Key) Action {
 }
 
 // openFullscreen gives the diff the whole screen; the list pane hides and
-// the keyboard goes to the diff.
+// the keyboard goes to the diff — the only way the diff gets it, so Tab
+// stays free for the tabs.
 func (m *Model) openFullscreen() {
 	if _, ok := m.Selected(); !ok {
 		return

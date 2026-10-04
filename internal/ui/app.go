@@ -15,7 +15,7 @@ import (
 	"wt-tui/internal/term"
 )
 
-// RefreshEvery is how often the worktree list is reloaded in the background.
+// RefreshEvery is how often the tab on screen reloads its worktree list.
 const RefreshEvery = 2 * time.Second
 
 // ErrInterrupted is returned when the user leaves with Ctrl-C.
@@ -42,22 +42,24 @@ func Run(dir string) (*Jump, error) {
 	}
 	defer t.Close()
 	a := &app{
-		cwd:      dir,
-		term:     t,
-		m:        New(nil),
-		events:   make(chan event, 64),
-		readReq:  make(chan struct{}, 1),
-		cache:    map[DiffKey]*repo.Diff{},
-		inflight: map[DiffKey]bool{},
-		sem:      make(chan struct{}, 4),
+		cwd:     dir,
+		term:    t,
+		rt:      map[*Model]*tabState{},
+		events:  make(chan event, 64),
+		readReq: make(chan struct{}, 1),
+		sem:     make(chan struct{}, 4),
 	}
+	m := New(nil)
+	a.ws = NewWorkspace(m)
+	first := a.track(m)
+	first.initial = true
 	if inRepo {
-		a.dir = dir
-		a.m.Message = "loading worktrees…"
-		a.refresh()
+		first.dir = dir
+		m.Message = "loading worktrees…"
+		a.refresh(first)
 	} else {
-		a.m.OpenPicker()
-		a.m.SetProjects(projects)
+		m.OpenPicker()
+		m.SetProjects(projects)
 	}
 	return a.run()
 }
@@ -71,36 +73,61 @@ type (
 	tickEvent     struct{}
 	quitEvent     struct{}
 	snapshotEvent struct {
+		t    *tabState
 		dir  string // the repo it was loaded for; stale after a project switch
 		snap *repo.Snapshot
 		err  error
 	}
 	diffEvent struct {
+		t   *tabState
 		key DiffKey
 		d   *repo.Diff
 	}
-	projectsEvent []repo.Project
+	projectsEvent struct {
+		t     *tabState
+		items []repo.Project
+	}
 )
 
-type app struct {
-	cwd       string // where wt-ui was started: the registry is read from there
-	dir       string // the directory the repo on screen is loaded from, "" while none
-	term      *term.Terminal
+// tabState is what a tab needs besides its Model: where its repo is
+// loaded from and the loads in flight for it.
+type tabState struct {
 	m         *Model
+	dir       string // the directory the repo is loaded from, "" while none
+	away      bool   // another project than the one wt-ui started in: no worktree is "current"
 	startRoot string // the main checkout of the repo wt-ui was started in
-	away      bool   // the repo on screen is another project: no worktree is "current" there
+	initial   bool   // the tab wt-ui opened with
+
+	cache      map[DiffKey]*repo.Diff
+	inflight   map[DiffKey]bool
+	reload     bool // the wanted diff was loading when the snapshot changed
+	refreshing bool
+}
+
+type app struct {
+	cwd  string // where wt-ui was started: the registry is read from there
+	term *term.Terminal
+	ws   *Workspace
+	rt   map[*Model]*tabState
 
 	events  chan event
 	readReq chan struct{} // the reader reads one chunk per request, so it is
 	// never mid-read while a child process owns the terminal
-
-	refreshing bool
-	cache      map[DiffKey]*repo.Diff
-	inflight   map[DiffKey]bool
-	reload     bool // the wanted diff was loading when the snapshot changed
-	sem        chan struct{}
-	lastFrame  string
+	sem       chan struct{}
+	lastFrame string
 }
+
+func (a *app) track(m *Model) *tabState {
+	t := &tabState{m: m, cache: map[DiffKey]*repo.Diff{}, inflight: map[DiffKey]bool{}}
+	a.rt[m] = t
+	return t
+}
+
+// cur is the tab on screen.
+func (a *app) cur() *tabState { return a.rt[a.ws.Current()] }
+
+// alive reports whether a tab a background load was started for still exists.
+func (a *app) alive(t *tabState) bool { return a.rt[t.m] == t }
 
 func (a *app) run() (jump *Jump, err error) {
 	if err := a.term.Raw(); err != nil {
@@ -141,7 +168,7 @@ func (a *app) run() (jump *Jump, err error) {
 		}
 	}()
 
-	a.ensureDiff(false)
+	a.ensureDiff(a.cur(), false)
 	for {
 		a.draw()
 		ev := <-a.events
@@ -166,26 +193,41 @@ func (a *app) handle(ev event) (jump *Jump, done bool, err error) {
 	switch ev := ev.(type) {
 	case keysEvent:
 		for _, k := range ev {
-			switch a.m.Update(k) {
+			if act, handled := a.ws.Update(k); handled {
+				if act == ActTabChanged {
+					a.tabChanged()
+				}
+				continue
+			}
+			switch {
+			case k == term.Ctrl('t'):
+				a.newTab()
+				continue
+			case k == term.Ctrl('x'):
+				a.closeTab()
+				continue
+			}
+			t := a.cur()
+			switch t.m.Update(k) {
 			case ActQuit:
 				return nil, true, nil
 			case ActInterrupt:
 				return nil, true, ErrInterrupted
 			case ActSwitch:
-				e, _ := a.m.Selected()
+				e, _ := t.m.Selected()
 				git.TouchCheckoutStamp(e.Path)
-				return &Jump{Path: e.Path, Home: a.m.Snap.Root}, true, nil
+				return &Jump{Path: e.Path, Home: t.m.Snap.Root}, true, nil
 			case ActPager:
-				a.openPager()
+				a.openPager(t)
 			case ActRefresh:
-				a.refresh()
+				a.refresh(t)
 			case ActRedraw:
 				a.resize()
 			case ActLoadProjects:
-				a.loadProjects()
+				a.loadProjects(t)
 			case ActOpenProject:
-				if p, ok := a.m.PickedProject(); ok {
-					a.openProject(p)
+				if p, ok := t.m.PickedProject(); ok {
+					a.openProject(t, p)
 				}
 			case ActSuspend:
 				a.suspend(func() {
@@ -196,7 +238,7 @@ func (a *app) handle(ev event) (jump *Jump, done bool, err error) {
 					<-cont
 				})
 			}
-			a.ensureDiff(false)
+			a.ensureDiff(t, false)
 		}
 		a.readReq <- struct{}{}
 	case readErrEvent:
@@ -206,16 +248,19 @@ func (a *app) handle(ev event) (jump *Jump, done bool, err error) {
 	case resizeEvent:
 		a.resize()
 	case tickEvent:
-		a.refresh()
+		a.refresh(a.cur())
 	case projectsEvent:
-		a.m.SetProjects(ev)
-	case snapshotEvent:
-		if ev.dir != a.dir {
-			return nil, false, nil // from before a project switch
+		if a.alive(ev.t) {
+			ev.t.m.SetProjects(ev.items)
 		}
-		a.refreshing = false
-		first := a.m.Snap == nil
-		if ev.err == nil && a.away {
+	case snapshotEvent:
+		t := ev.t
+		if !a.alive(t) || ev.dir != t.dir {
+			return nil, false, nil // for a closed tab, or from before a project switch
+		}
+		t.refreshing = false
+		first := t.m.Snap == nil
+		if ev.err == nil && t.away {
 			// Loaded from the project's root, so git would call the main
 			// checkout current; nothing here is where the user stands.
 			ev.snap.Current = -1
@@ -223,35 +268,75 @@ func (a *app) handle(ev event) (jump *Jump, done bool, err error) {
 				ev.snap.Entries[i].Current = false
 			}
 		}
-		a.m.SetSnapshot(ev.snap, ev.err)
-		if first && ev.err != nil {
+		t.m.SetSnapshot(ev.snap, ev.err)
+		if first && ev.err != nil && t.initial {
 			// The very first load failed: there is nothing to show.
 			return nil, true, ev.err
 		}
-		if ev.err == nil && !a.away && a.startRoot == "" {
-			a.startRoot = ev.snap.Root
+		if ev.err == nil && !t.away && t.startRoot == "" {
+			t.startRoot = ev.snap.Root
 		}
-		if first && ev.snap.Current >= 0 {
-			a.m.selectEntry(ev.snap.Current)
+		if first && ev.err == nil && ev.snap.Current >= 0 {
+			t.m.selectEntry(ev.snap.Current)
 		}
 		if ev.err == nil {
-			a.cache = map[DiffKey]*repo.Diff{}
-			if key, ok := a.m.WantedDiff(); ok && a.inflight[key] {
-				a.reload = true
+			t.cache = map[DiffKey]*repo.Diff{}
+			if key, ok := t.m.WantedDiff(); ok && t.inflight[key] {
+				t.reload = true
 			}
-			a.ensureDiff(true)
+			a.ensureDiff(t, true)
 		}
 	case diffEvent:
-		delete(a.inflight, ev.key)
-		a.cache[ev.key] = ev.d
-		a.m.SetDiff(ev.key, ev.d)
-		if want, ok := a.m.WantedDiff(); ok && want == ev.key && a.reload {
-			a.reload = false
-			a.ensureDiff(true)
+		t := ev.t
+		if !a.alive(t) {
+			return nil, false, nil
 		}
-		a.ensureDiff(false)
+		delete(t.inflight, ev.key)
+		t.cache[ev.key] = ev.d
+		t.m.SetDiff(ev.key, ev.d)
+		if want, ok := t.m.WantedDiff(); ok && want == ev.key && t.reload {
+			t.reload = false
+			a.ensureDiff(t, true)
+		}
+		a.ensureDiff(t, false)
 	}
 	return nil, false, nil
+}
+
+// newTab opens a tab on what the current one shows; ^o then points it
+// elsewhere. A tab with nothing loaded yet starts on the project picker.
+func (a *app) newTab() {
+	src := a.cur()
+	m := NewTabFrom(src.m)
+	t := a.track(m)
+	t.dir, t.away, t.startRoot = src.dir, src.away, src.startRoot
+	a.ws.Add(m)
+	if m.Snap == nil {
+		t.dir = ""
+		m.OpenPicker()
+		a.loadProjects(t)
+		return
+	}
+	a.ensureDiff(t, false)
+}
+
+func (a *app) closeTab() {
+	m, ok := a.ws.Close()
+	if !ok {
+		a.cur().m.Message = "the last tab stays — esc quits"
+		return
+	}
+	delete(a.rt, m)
+	a.tabChanged()
+}
+
+// tabChanged brings the tab now on screen up to date: only the visible
+// tab refreshes, so a background tab's list can be stale when it comes
+// back.
+func (a *app) tabChanged() {
+	t := a.cur()
+	a.refresh(t)
+	a.ensureDiff(t, false)
 }
 
 // reader hands the main loop one chunk of key presses per request.
@@ -275,98 +360,99 @@ func (a *app) reader() {
 func (a *app) resize() {
 	cols, rows, err := a.term.Size()
 	if err == nil {
-		a.m.SetSize(cols, rows)
+		a.ws.SetSize(cols, rows)
 	}
 	a.term.Write("\x1b[2J")
 	a.lastFrame = ""
 }
 
-// refresh reloads the worktree list in the background, one load at a time.
-func (a *app) refresh() {
-	if a.refreshing || a.dir == "" {
+// refresh reloads a tab's worktree list in the background, one load at a
+// time per tab.
+func (a *app) refresh(t *tabState) {
+	if t.refreshing || t.dir == "" {
 		return
 	}
-	a.refreshing = true
-	dir := a.dir
+	t.refreshing = true
+	dir := t.dir
 	go func() {
 		snap, err := repo.Load(dir)
-		a.events <- snapshotEvent{dir, snap, err}
+		a.events <- snapshotEvent{t, dir, snap, err}
 	}()
 }
 
-// loadProjects reads wt's registry for the picker in the background.
-func (a *app) loadProjects() {
+// loadProjects reads wt's registry for a tab's picker in the background.
+func (a *app) loadProjects(t *tabState) {
 	dir := a.cwd
-	go func() { a.events <- projectsEvent(repo.Projects(dir)) }()
+	go func() { a.events <- projectsEvent{t, repo.Projects(dir)} }()
 }
 
-// openProject points the browser at another repo: the screen empties
-// while its worktrees load, and anything still arriving for the previous
-// repo is dropped.
-func (a *app) openProject(p repo.Project) {
-	a.m.ClosePicker()
-	if a.m.Snap != nil && p.Root == a.m.Snap.Root {
+// openProject points a tab at another repo: its screen empties while the
+// worktrees load, and anything still arriving for the previous repo is
+// dropped.
+func (a *app) openProject(t *tabState, p repo.Project) {
+	t.m.ClosePicker()
+	if t.m.Snap != nil && p.Root == t.m.Snap.Root {
 		return
 	}
-	a.m.Reset("opening " + p.Name + "…")
+	t.m.Reset("opening " + p.Name + "…")
 	// Back in the starting repo the start directory is current again;
 	// elsewhere the project is loaded from its root.
-	if a.startRoot != "" && samePath(p.Root, a.startRoot) {
-		a.dir, a.away = a.cwd, false
+	if t.startRoot != "" && samePath(p.Root, t.startRoot) {
+		t.dir, t.away = a.cwd, false
 	} else {
-		a.dir, a.away = p.Root, true
+		t.dir, t.away = p.Root, true
 	}
-	a.cache = map[DiffKey]*repo.Diff{}
-	a.refreshing = false
-	a.refresh()
+	t.cache = map[DiffKey]*repo.Diff{}
+	t.refreshing = false
+	a.refresh(t)
 }
 
-// ensureDiff makes sure the diff the left pane wants is loaded or loading;
-// force reloads it even when a copy is already on screen.
-func (a *app) ensureDiff(force bool) {
-	key, ok := a.m.WantedDiff()
+// ensureDiff makes sure the diff a tab's left pane wants is loaded or
+// loading; force reloads it even when a copy is already on screen.
+func (a *app) ensureDiff(t *tabState, force bool) {
+	key, ok := t.m.WantedDiff()
 	if !ok {
 		return
 	}
 	if !force {
-		if a.m.Diff() != nil {
+		if t.m.Diff() != nil {
 			return
 		}
-		if d, ok := a.cache[key]; ok {
-			a.m.SetDiff(key, d)
+		if d, ok := t.cache[key]; ok {
+			t.m.SetDiff(key, d)
 			return
 		}
 	}
-	if a.inflight[key] {
+	if t.inflight[key] {
 		return
 	}
-	snap := a.m.Snap
+	snap := t.m.Snap
 	i := snap.Find(key.Path)
 	if i < 0 {
 		return
 	}
 	entry := snap.Entries[i]
-	a.inflight[key] = true
+	t.inflight[key] = true
 	go func() {
 		a.sem <- struct{}{}
 		d := repo.LoadDiff(snap, entry, key.Mode, Colors)
 		<-a.sem
-		a.events <- diffEvent{key, d}
+		a.events <- diffEvent{t, key, d}
 	}()
 }
 
 // openPager hands the terminal to git so the diff shows through the
 // configured pager, exactly as `git diff` typed there would.
-func (a *app) openPager() {
-	e, ok := a.m.Selected()
-	d := a.m.Diff()
+func (a *app) openPager(t *tabState) {
+	e, ok := t.m.Selected()
+	d := t.m.Diff()
 	if !ok || d == nil {
 		return
 	}
 	a.suspend(func() {
 		args := append([]string{"-c", "color.ui=auto"}, d.Args()...)
 		if err := git.RunOnTTY(e.Path, a.term.File(), args...); err != nil {
-			a.m.Message = "pager: " + strings.TrimSpace(err.Error())
+			t.m.Message = "pager: " + strings.TrimSpace(err.Error())
 		}
 	})
 }
@@ -382,9 +468,6 @@ func (a *app) suspend(fn func()) {
 	a.resize()
 }
 
-// draw repaints the whole screen in one write — unless nothing changed
-// since the last frame, as after a background refresh that found the same
-// state.
 // samePath compares two directories with symlinks resolved.
 func samePath(x, y string) bool {
 	if rx, err := filepath.EvalSymlinks(x); err == nil {
@@ -396,11 +479,14 @@ func samePath(x, y string) bool {
 	return x == y
 }
 
+// draw repaints the whole screen in one write — unless nothing changed
+// since the last frame, as after a background refresh that found the same
+// state.
 func (a *app) draw() {
-	a.m.Now = time.Now()
+	a.ws.Current().Now = time.Now()
 	var b strings.Builder
 	b.WriteString(term.BeginFrame)
-	for i, line := range a.m.Render() {
+	for i, line := range a.ws.Render() {
 		fmt.Fprintf(&b, "\x1b[%d;1H%s%s", i+1, line, cReset)
 	}
 	b.WriteString(term.EndFrame)
