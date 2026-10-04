@@ -21,9 +21,11 @@ filter, Enter to jump there.
 ╰──────────────────────────────────────────────────────────────────────────╯╰─ ↑↓ move · ↵ switch · esc clear · ^d ^u diff ─╯
 ```
 
-Stdlib-only Go, one binary, no configuration. It reads git directly, so it
-works in any repository — with or without `wt` installed — and it reads
-wt's own checkout stamps, so "most recent" means the same thing in both.
+Stdlib-only Go, one binary, no configuration. With wt installed it reads
+the list through `worktree list --json`, wt's stable scripting interface,
+so it sees everything wt knows: worktree kinds, base branches, peeks and
+the checkout stamps that define "most recent". Without wt it reads git
+directly and still works in any repository.
 
 ## Install
 
@@ -78,10 +80,14 @@ The screen is split 66% / 34%:
 - **Right — the worktrees**, sorted by recency: the last time wt (or
   wt-ui) jumped into the worktree, falling back to the date of its head
   commit when it was never jumped into. Each row shows the branch
-  (`(detached)` for a detached HEAD), a red `●` when the worktree has
-  uncommitted changes, `↑n ↓n` ahead/behind its upstream, the head commit
-  and the age. `★` marks the worktree you started from. The title bar
-  counts worktrees and dirty ones.
+  (`(detached)` for a detached HEAD, `(peek: <rev>)` for a wt peek), a red
+  `●` when the worktree has uncommitted changes, `↑n ↓n` ahead/behind its
+  upstream, the head commit and the age. `★` marks the worktree you
+  started from. Names use the `wt list` palette — cyan for the main
+  checkout, green for wt-managed worktrees, orange for bases (red with a
+  `!` when drifted), magenta for external worktrees, red for peeks. The
+  title bar shows the linked project name and counts worktrees and dirty
+  ones.
 
 Typing filters the list — every word you type has to occur in the branch,
 the worktree's directory name or its path. The selection follows the
@@ -130,11 +136,17 @@ jump. Leaving without choosing prints nothing and exits 0; `^c` exits 130.
 
 [wt](https://github.com/glevski/wt) creates, forks and removes worktrees
 and records a stamp (`wt-checkout` in the worktree's git admin dir) every
-time it jumps into one. wt-tui reads those stamps for its ordering and
-touches the same stamp when you jump from it, so `wt ls`, `wt ch`'s picker
-and wt-ui agree on what you used last. The branch view's base comes from
-the `wt-base` file wt writes at `create`/`fork` time. Nothing else is
-shared: wt-tui never creates or removes anything, and it needs only `git`.
+time it jumps into one. When the `worktree` binary is on your PATH,
+wt-tui runs `worktree list --json` on every refresh and takes the rows
+from there — kinds, dirty state, checkout stamps, recorded base branches,
+drift and peeks — the same document wt-vscode is built on. Only the
+upstream position (`↑n ↓n`) and the diff come from git. When you jump
+from wt-ui it touches the same stamp wt does, so `wt ls`, `wt ch`'s
+picker and wt-ui agree on what you used last.
+
+Without wt, wt-tui reads `git worktree list` and wt's marker files
+itself: the same ordering, minus kinds and peeks. It never creates or
+removes anything either way.
 
 ## Development
 

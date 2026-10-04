@@ -12,15 +12,17 @@ import (
 // concatenated freely; the row and border painters re-apply their own
 // style after each fragment.
 const (
-	cReset  = "\x1b[0m"
-	cBold   = "\x1b[1m"
-	cDim    = "\x1b[2m"
-	cRed    = "\x1b[31m"
-	cGreen  = "\x1b[32m"
-	cYellow = "\x1b[33m"
-	cCyan   = "\x1b[36m"
-	cSelect = "\x1b[44;1m" // the selected row: bold on blue
-	cFg     = "\x1b[39m"   // back to the default foreground, keeping the background
+	cReset   = "\x1b[0m"
+	cBold    = "\x1b[1m"
+	cDim     = "\x1b[2m"
+	cRed     = "\x1b[31m"
+	cGreen   = "\x1b[32m"
+	cYellow  = "\x1b[33m"
+	cMagenta = "\x1b[35m"
+	cCyan    = "\x1b[36m"
+	cOrange  = "\x1b[38;5;208m" // 256-color; the basic palette has no orange
+	cSelect  = "\x1b[44;1m"     // the selected row: bold on blue
+	cFg      = "\x1b[39m"       // back to the default foreground, keeping the background
 )
 
 // Colors is switched off by NO_COLOR; the selection then shows in reverse
@@ -84,6 +86,9 @@ func (m *Model) Render() []string {
 func (m *Model) titleBar() string {
 	left := " " + paint(cBold+cCyan, "wt")
 	if m.Snap != nil {
+		if m.Snap.Linked && m.Snap.Project != "" {
+			left += "  " + m.Snap.Project
+		}
 		left += "  " + paint(cDim, tilde(m.Snap.Root))
 	}
 	if e, ok := m.Selected(); ok {
@@ -399,10 +404,13 @@ func (m *Model) row(e repo.Entry, selected bool, c columns, width int) string {
 	}
 	b.WriteString(" ")
 	name := e.Label()
-	if e.Missing {
+	switch {
+	case e.Missing:
 		name = paintIn(cDim, name)
-	} else if e.Main && !selected {
-		name = paintIn(cCyan, name)
+	case e.Drifted && !selected:
+		name = paintIn(cRed, name)
+	case !selected:
+		name = paintIn(kindColor(e.Kind), name)
 	}
 	b.WriteString(term.PadRight(term.Truncate(name, c.name), c.name))
 	b.WriteString("  ")
@@ -443,6 +451,25 @@ func (m *Model) row(e repo.Entry, selected bool, c columns, width int) string {
 	// The highlight must span the whole row, so every fragment's reset is
 	// followed by the row style again.
 	return base + strings.ReplaceAll(content, cReset, cReset+base) + cReset
+}
+
+// kindColor is wt's own palette for worktree names (see `wt list`): cyan
+// for the main checkout, orange for base worktrees, green for wt-managed
+// ones, magenta for external ones, red for peeks.
+func kindColor(kind string) string {
+	switch kind {
+	case "main":
+		return cCyan
+	case "base":
+		return cOrange
+	case "managed":
+		return cGreen
+	case "external":
+		return cMagenta
+	case "peek":
+		return cRed
+	}
+	return ""
 }
 
 func dimUnless(selected bool) string {

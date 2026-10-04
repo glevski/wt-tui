@@ -543,3 +543,51 @@ func TestNoColor(t *testing.T) {
 		t.Error("selection not marked in reverse video")
 	}
 }
+
+func TestKindsFromWT(t *testing.T) {
+	Colors = true
+	snap := snapshot()
+	snap.Source, snap.Linked, snap.Project = "wt", true, "acme"
+	snap.Entries[0].Kind = "managed"
+	snap.Entries[2].Kind = "main"
+	snap.Entries[3].Kind, snap.Entries[3].Base, snap.Entries[3].Drifted = "base", true, true
+	snap.Entries[4].Kind = "external"
+	// The repo layer sorts; a peek created a minute ago comes first.
+	peek := repo.Entry{Name: "peek-main", Path: "/p", Kind: "peek", Rev: "origin/main",
+		Head: "fffffff", LastUsed: now.Add(-time.Minute), UsedKind: "created"}
+	snap.Entries = append([]repo.Entry{peek}, snap.Entries...)
+	snap.Current = 1
+	m := New(snap)
+	m.Now = now
+	m.SetSize(160, 30)
+	press(m, term.Key{Kind: term.KeyDown}) // move the highlight off the managed row
+	lines := m.Render()
+	plain := stripAll(lines)
+	screen := strings.Join(plain, "\n")
+	if !strings.Contains(plain[0], " wt  acme  /home/me/code/acme ") {
+		t.Errorf("title lacks the project: %q", plain[0])
+	}
+	find := func(label string) string {
+		for _, l := range lines {
+			if strings.Contains(term.Strip(l), label) {
+				return l
+			}
+		}
+		t.Fatalf("row %q missing:\n%s", label, screen)
+		return ""
+	}
+	for label, color := range map[string]string{
+		"feature/auth-session":    cGreen,
+		" main ":                  cCyan,
+		"feature/worktree-prune!": cRed, // drifted base: red, with wt's "!" marker
+		"chore/bump-deps":         cMagenta,
+		"(peek: origin/main)":     cRed,
+	} {
+		if row := find(label); !strings.Contains(row, color+label) && !strings.Contains(row, color+strings.TrimSpace(label)) {
+			t.Errorf("row %q not painted %q: %q", label, color, row)
+		}
+	}
+	if !strings.Contains(plain[4], "(peek: origin/main)") || !strings.Contains(plain[5], "★ feature/auth-session") {
+		t.Errorf("rows out of place:\n%s", screen)
+	}
+}

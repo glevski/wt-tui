@@ -21,10 +21,13 @@ type Entry struct {
 	Branch   string // short branch name; empty when detached
 	Head     string // full SHA
 	Detached bool
-	Missing  bool // the directory is gone (git would prune it)
-	Main     bool // the main checkout
-	Current  bool // the worktree wt-tui was started in
-	Base     bool // a wt base worktree
+	Missing  bool   // the directory is gone (git would prune it)
+	Kind     string // wt's classification: main, base, managed, external, peek; "" when unknown
+	Main     bool   // the main checkout
+	Current  bool   // the worktree wt-tui was started in
+	Base     bool   // a wt base worktree
+	Drifted  bool   // a base worktree that left the branch it is pinned to
+	Rev      string // the revision a peek shows
 
 	Dirty     bool
 	StatusErr string // why the state is unknown, "" when it is known
@@ -40,11 +43,16 @@ type Entry struct {
 	BaseHint string // the branch wt recorded the worktree was created from
 }
 
-// Label is what identifies the worktree in a list: its branch, or for a
-// detached HEAD a marker.
+// Label is what identifies the worktree in a list: its branch (with wt's
+// "!" suffix on a drifted base), a marker for a detached HEAD or a peek.
 func (e Entry) Label() string {
-	if e.Detached || e.Branch == "" {
+	switch {
+	case e.Kind == "peek":
+		return "(peek: " + e.Rev + ")"
+	case e.Detached || e.Branch == "":
 		return "(detached)"
+	case e.Drifted:
+		return e.Branch + "!"
 	}
 	return e.Branch
 }
@@ -64,6 +72,9 @@ func (e Entry) Short() string {
 type Snapshot struct {
 	Root       string // path of the main worktree
 	MainBranch string // the main worktree's branch, the default diff base
+	Project    string // wt's project name, "" when wt did not supply it
+	Linked     bool   // the repo is linked to a wt project
+	Source     string // where the list came from: "wt" or "git"
 	Entries    []Entry
 	Current    int // index of the current worktree in Entries, -1 when none
 	Dirty      int
@@ -72,15 +83,28 @@ type Snapshot struct {
 	Taken      time.Time
 }
 
-// Load reads the repo containing dir. Worktrees come sorted by recency:
-// the last checkout, falling back to the head commit's date, newest first.
+// Load reads the repo containing dir — through `worktree list --json` when
+// wt is installed, which knows worktree kinds, base branches and peeks,
+// else straight from git. Worktrees come sorted by recency: the last
+// checkout, falling back to the head commit's date, newest first.
 func Load(dir string) (*Snapshot, error) {
+	snap, err := loadFromWT(dir)
+	if err != nil {
+		if snap, err = loadFromGit(dir); err != nil {
+			return nil, err
+		}
+	}
+	finish(snap)
+	return snap, nil
+}
+
+// loadFromGit builds the snapshot from git and wt's marker files alone.
+func loadFromGit(dir string) (*Snapshot, error) {
 	wts, err := git.Worktrees(dir)
 	if err != nil {
 		return nil, err
 	}
-	snap := &Snapshot{Root: wts[0].Path, MainBranch: wts[0].Branch, Current: -1, Taken: time.Now()}
-	snap.Pager, snap.PagerFrom = git.Pager(snap.Root)
+	snap := &Snapshot{Root: wts[0].Path, MainBranch: wts[0].Branch, Source: "git", Current: -1, Taken: time.Now()}
 
 	var heads []string
 	for _, wt := range wts {
@@ -89,7 +113,6 @@ func Load(dir string) (*Snapshot, error) {
 		}
 	}
 	committed := git.CommitDates(snap.Root, heads)
-	tracking := git.Tracking(snap.Root)
 
 	cwd := canonical(dir)
 	for i, wt := range wts {
@@ -105,6 +128,9 @@ func Load(dir string) (*Snapshot, error) {
 			Missing:  wt.Prunable,
 			Main:     i == 0,
 		}
+		if e.Main {
+			e.Kind = "main"
+		}
 		if !e.Missing {
 			if _, err := os.Stat(wt.Path); err != nil {
 				e.Missing = true
@@ -112,9 +138,6 @@ func Load(dir string) (*Snapshot, error) {
 		}
 		if t, ok := committed[wt.Head]; ok {
 			e.Committed = t
-		}
-		if wt.Branch != "" {
-			e.Track = tracking[wt.Branch]
 		}
 		snap.Entries = append(snap.Entries, e)
 	}
@@ -131,7 +154,9 @@ func Load(dir string) (*Snapshot, error) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			e.Base = git.IsBase(e.Path)
+			if e.Base = git.IsBase(e.Path); e.Base {
+				e.Kind = "base"
+			}
 			e.BaseHint, _ = git.BaseBranch(e.Path)
 			if t, ok := git.CheckoutStamp(e.Path); ok {
 				e.LastUsed, e.UsedKind = t, "checkout"
@@ -148,6 +173,33 @@ func Load(dir string) (*Snapshot, error) {
 	}
 	wg.Wait()
 
+	// The current worktree is the deepest one containing the directory: a
+	// worktree nested inside another's directory (.claude/worktrees/x under
+	// the root) wins when standing in it.
+	current := -1
+	for i, e := range snap.Entries {
+		if !e.Missing && isWithin(cwd, canonical(e.Path)) {
+			if current < 0 || len(canonical(e.Path)) > len(canonical(snap.Entries[current].Path)) {
+				current = i
+			}
+		}
+	}
+	if current >= 0 {
+		snap.Entries[current].Current = true
+	}
+	return snap, nil
+}
+
+// finish adds what both sources leave out — upstream positions and the
+// pager — then sorts by recency and counts.
+func finish(snap *Snapshot) {
+	snap.Pager, snap.PagerFrom = git.Pager(snap.Root)
+	tracking := git.Tracking(snap.Root)
+	for i := range snap.Entries {
+		if b := snap.Entries[i].Branch; b != "" {
+			snap.Entries[i].Track = tracking[b]
+		}
+	}
 	sort.SliceStable(snap.Entries, func(i, j int) bool {
 		a, b := snap.Entries[i], snap.Entries[j]
 		if !a.LastUsed.Equal(b.LastUsed) {
@@ -155,24 +207,15 @@ func Load(dir string) (*Snapshot, error) {
 		}
 		return a.Name < b.Name
 	})
-	for i := range snap.Entries {
-		e := &snap.Entries[i]
+	snap.Current, snap.Dirty = -1, 0
+	for i, e := range snap.Entries {
 		if e.Dirty {
 			snap.Dirty++
 		}
-		if !e.Missing && isWithin(cwd, canonical(e.Path)) {
-			// The deepest match wins: a worktree nested inside another's
-			// directory (.claude/worktrees/x under the root) is the current
-			// one when standing in it.
-			if snap.Current < 0 || len(canonical(e.Path)) > len(canonical(snap.Entries[snap.Current].Path)) {
-				snap.Current = i
-			}
+		if e.Current && snap.Current < 0 {
+			snap.Current = i
 		}
 	}
-	if snap.Current >= 0 {
-		snap.Entries[snap.Current].Current = true
-	}
-	return snap, nil
 }
 
 // Find returns the index of the entry at path, -1 when gone.

@@ -50,7 +50,11 @@ func (d *Diff) Empty() bool {
 // exactly what `git diff` prints to a terminal, minus the pager.
 func LoadDiff(snap *Snapshot, e Entry, mode Mode, color bool) *Diff {
 	d := &Diff{Mode: mode}
-	if e.Missing {
+	switch {
+	case e.Kind == "peek":
+		d.Err = "a peek is a plain snapshot of " + e.Rev + " without git — nothing to diff"
+		return d
+	case e.Missing:
 		d.Err = "worktree directory is missing — git worktree prune drops it"
 		return d
 	}
