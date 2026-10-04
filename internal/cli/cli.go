@@ -33,7 +33,7 @@ worktrees on the right (34%%), most recently used first — the last wt
 checkout, or the head commit's date for worktrees never jumped into.
 
 Keys:
-  type              filter the worktrees (branch, name or path)
+  type              filter the worktrees by name
   ↑ ↓  ^p ^n        move          PgUp PgDn Home End  page / ends
   Enter             open the diff full screen; Esc comes back
   Ctrl+Enter  ^s    switch to the selected worktree (prints the jump);
@@ -108,7 +108,22 @@ func Run(args []string) int {
 		return 0
 	}
 	fmt.Fprint(stdout, jumpScript(*jump, os.Getenv("WT_JUMP") == "json"))
+	if os.Getenv("WT_UI_WRAPPER") == "" && os.Getenv("WT_JUMP") == "" && stdoutIsTerminal() {
+		// The script went to a terminal, not to the shell function that
+		// would eval it: nothing is going to change directory.
+		fmt.Fprintln(stderr, "wt-ui: that is the jump script — to have it cd you, run wt-ui through its shell function:")
+		fmt.Fprintln(stderr, `  eval "$(wt-ui init zsh)"   # or: init bash — put it in your rc file`)
+	}
 	return 0
+}
+
+func stdoutIsTerminal() bool {
+	f, ok := stdout.(*os.File)
+	if !ok {
+		return false
+	}
+	info, err := f.Stat()
+	return err == nil && info.Mode()&os.ModeCharDevice != 0
 }
 
 // parseDir reads the only option, -C <dir>, defaulting to the working

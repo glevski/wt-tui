@@ -21,7 +21,7 @@ wt-ui() {
             ;;
     esac
     local _wt_script
-    _wt_script="$(%[1]q "$@")" || return $?
+    _wt_script="$(WT_UI_WRAPPER=1 %[1]q "$@")" || return $?
     if [ -n "$_wt_script" ]; then
         _wt_prev="$PWD"
         eval "$_wt_script"

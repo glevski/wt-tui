@@ -7,18 +7,18 @@ filter, Enter to read the diff full screen, Ctrl+Enter to jump there, `^o`
 to hop to another project.
 
 ```
- wt  ~/code/acme  feature/auth-session @ 8b7d2e0                              8 worktrees · 4 dirty
-╭─ diff feature/auth-session · 3 files · +21 -6 ─────── core.pager = less ─╮╭─ worktrees 8 ──────────────────────────────────╮
+ wt  acme  ~/code/acme  feature-auth  feature/auth-session @ 8b7d2e0           8 worktrees · 4 dirty
+╭─ diff feature-auth · 3 files · +21 -6 ─────────────── core.pager = less ─╮╭─ worktrees 8 ──────────────────────────────────╮
 │ diff --git a/src/auth/session.ts b/src/auth/session.ts                   ││ / ▌ type to filter                             │
 │ index 3f2a1c9..8b7d2e0 100644                                            ││                                                │
-│ --- a/src/auth/session.ts                                                ││ ★ feature/auth-session  ● ↑2       8b7d2e0  2m │
-│ +++ b/src/auth/session.ts                                                ││   fix/flaky-ci-retry    ● ↑1  ↓3   c41e9a7 38m │
-│ @@ -1,6 +1,7 @@                                                          ││   main                             3f2a1c9  3h │
-│  import { randomBytes } from "node:crypto";                              ││   feature/worktree-prune ● ↑5      9d02f4b  1d │
-│ +import { SESSION_TTL_MS } from "../config";                             ││   chore/bump-deps             ↓12  71ac3e8  3d │
-│  import type { User } from "../types";                                   ││   spike/tui-ratatui     ● ↑14      e5f60b2  2w │
-│ …                                                                        ││   release/0.4                      0a8c7d1 1mo │
-│                                                                          ││   hotfix/path-escape          ↓40  b3d91f6 2mo │
+│ --- a/src/auth/session.ts                                                ││ ★ feature-auth          ● ↑2       8b7d2e0  2m │
+│ +++ b/src/auth/session.ts                                                ││   fix-flaky-ci          ● ↑1  ↓3   c41e9a7 38m │
+│ @@ -1,6 +1,7 @@                                                          ││   acme                             3f2a1c9  3h │
+│  import { randomBytes } from "node:crypto";                              ││   worktree-prune        ● ↑5       9d02f4b  1d │
+│ +import { SESSION_TTL_MS } from "../config";                             ││   chore-bump-deps             ↓12  71ac3e8  3d │
+│  import type { User } from "../types";                                   ││   spike-ratatui         ● ↑14      e5f60b2  2w │
+│ …                                                                        ││   release-0.4                      0a8c7d1 1mo │
+│                                                                          ││   hotfix-path-escape          ↓40  b3d91f6 2mo │
 ╰──────────────────────────────────────────────────────────────────────────╯╰── ↑↓ move · ↵ diff · ^↵ switch · esc clear ─╯
 ```
 
@@ -83,25 +83,28 @@ The screen is split 66% / 34%:
 
 - **Right — the worktrees**, sorted by recency: the last time wt (or
   wt-ui) jumped into the worktree, falling back to the date of its head
-  commit when it was never jumped into. Each row shows the branch
-  (`(detached)` for a detached HEAD, `(peek: <rev>)` for a wt peek), a red
-  `●` when the worktree has uncommitted changes, `↑n ↓n` ahead/behind its
+  commit when it was never jumped into. Each row shows the **worktree
+  name** — the directory name `wt ls` lists and `wt ch` takes — a red `●`
+  when the worktree has uncommitted changes, `↑n ↓n` ahead/behind its
   upstream, the head commit and the age. `★` marks the worktree you
   started from. Names use the `wt list` palette — cyan for the main
   checkout, green for wt-managed worktrees, orange for bases (red with a
   `!` when drifted), magenta for external worktrees, red for peeks. The
-  title bar shows the linked project name and counts worktrees and dirty
-  ones.
+  title bar shows the linked project name, the selected worktree's branch
+  (or `(detached)`, or `(peek: <rev>)` for a wt peek) and commit, and
+  counts worktrees and dirty ones.
 
-Typing filters the list — every word you type has to occur in the branch,
-the worktree's directory name or its path. The selection follows the
-filter, and the diff follows the selection. Enter opens the diff **full
+Typing filters the list by worktree name — every word you type has to
+occur in it. The selection follows the filter, and the diff follows the
+selection. Enter opens the diff **full
 screen**, hiding the list; Esc brings the list back. **Ctrl+Enter switches**
 to the selected worktree from the list or from the full-screen diff and
 leaves the program; `^s` does the same and is the fallback for terminals
 that cannot tell Ctrl+Enter from Enter (wt-ui asks for the kitty keyboard
 protocol and xterm's `modifyOtherKeys` on startup, which kitty, WezTerm,
-foot, Ghostty, iTerm2, Alacritty and xterm understand). Everything refreshes
+foot, Ghostty, iTerm2, Alacritty and xterm understand; VS Code's terminal
+does not). The hints at the bottom say `^↵ switch` once the terminal has
+confirmed it can send Ctrl+Enter, `^s switch` otherwise. Everything refreshes
 itself every two seconds (`git status` per worktree, in parallel, with
 `GIT_OPTIONAL_LOCKS=0` so it never fights your own git for the index lock).
 
@@ -117,7 +120,7 @@ Started outside any repository, wt-ui opens on the picker directly.
 
 | Key | Action |
 | --- | --- |
-| type | filter the worktrees |
+| type | filter the worktrees by name |
 | `↑` `↓`, `^p` `^n` | move the selection |
 | `PgUp` `PgDn` `Home` `End` | page the list / jump to its ends |
 | `Enter` | open the diff full screen (Esc comes back) |
@@ -138,6 +141,15 @@ In the diff, full screen or focused, the keys are less's: `j` `k` scroll,
 screen from the split view and scrolls a line in full screen; `Ctrl+Enter`
 or `^s` switch to the worktree; `Esc`, `q`, `Tab` or `/` return to the
 list.
+
+## It printed `cd …` but I am still here
+
+Then you ran the binary itself. A process cannot change its parent shell's
+directory, so the jump has to be evaluated by the shell: that is the
+`wt-ui` shell function from `eval "$(wt-ui init zsh)"` (or `init bash`).
+`type wt-ui` should say it is a function; if it names the binary, add the
+line to your rc file and open a new shell. The binary prints a reminder
+on stderr whenever its jump lands on a terminal instead of the function.
 
 ## Scripting and editor integration
 

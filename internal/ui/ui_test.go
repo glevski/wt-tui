@@ -48,7 +48,35 @@ func newModel(t *testing.T, w, h int) *Model {
 	m := New(snapshot())
 	m.Width, m.Height = w, h
 	m.Now = now
+	m.CtrlEnter = true // as on a terminal that answered the keyboard-protocol query
 	return m
+}
+
+// Until the terminal says it can tell Ctrl+Enter from Enter, the hints
+// name ^s, which always works.
+func TestSwitchHintFollowsTerminal(t *testing.T) {
+	Colors = true
+	m := New(snapshot())
+	m.SetSize(160, 30)
+	m.Now = now
+	screen := strings.Join(stripAll(m.Render()), "\n")
+	if !strings.Contains(screen, "↵ diff · ^s switch") || strings.Contains(screen, "^↵") {
+		t.Errorf("hints before the reply:\n%s", screen)
+	}
+	if a := press(m, term.Key{Kind: term.KeyKittyReply}); a != ActNone || !m.CtrlEnter {
+		t.Errorf("reply: action %v, ctrl+enter %v", a, m.CtrlEnter)
+	}
+	screen = strings.Join(stripAll(m.Render()), "\n")
+	if !strings.Contains(screen, "↵ diff · ^↵ switch") {
+		t.Errorf("hints after the reply:\n%s", screen)
+	}
+	// The reply can arrive while the picker is up.
+	press(m, term.Ctrl('o'))
+	m.CtrlEnter = false
+	press(m, term.Key{Kind: term.KeyKittyReply})
+	if !m.CtrlEnter || m.Picker == nil {
+		t.Error("reply during the picker")
+	}
 }
 
 func labels(m *Model) []string {
@@ -100,7 +128,7 @@ func TestFilter(t *testing.T) {
 	if got := labels(m); strings.Join(got, ",") != "feature/auth-session,feature/worktree-prune" {
 		t.Errorf("filter fea = %v", got)
 	}
-	// Multiple terms all have to match; the worktree name counts too.
+	// Multiple terms all have to match, each against the worktree name.
 	press(m, term.Char(' '), term.Char('p'), term.Char('r'), term.Char('u'))
 	if got := labels(m); strings.Join(got, ",") != "feature/worktree-prune" {
 		t.Errorf("filter 'fea pru' = %v", got)
@@ -210,7 +238,7 @@ func TestFullscreen(t *testing.T) {
 	if strings.Contains(screen, "worktrees 8") || strings.Contains(screen, "╮╭") || strings.Contains(screen, "type to filter") {
 		t.Errorf("list pane still drawn:\n%s", screen)
 	}
-	for _, want := range []string{"diff feature/auth-session · 1 file · +1 -0", "core.pager = less", "+x", "^↵ switch · esc back"} {
+	for _, want := range []string{"diff feature-auth-session · 1 file · +1 -0", "core.pager = less", "+x", "^↵ switch · esc back"} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("full screen lacks %q:\n%s", want, screen)
 		}
@@ -342,7 +370,7 @@ func TestCurrentLowInListStaysVisibleOnceSized(t *testing.T) {
 	m.Now = now
 	m.SetSize(160, 30)
 	screen := strings.Join(stripAll(m.Render()), "\n")
-	for _, want := range []string{"feature/auth-session", "fix/flaky-ci-retry", "main", "★ chore/bump-deps"} {
+	for _, want := range []string{"feature-auth-session", "fix-flaky-ci-retry", "acme", "★ chore-bump-deps"} {
 		if !strings.Contains(screen, want) {
 			t.Errorf("row %q scrolled out:\n%s", want, screen)
 		}
@@ -358,7 +386,7 @@ func TestCurrentLowInListStaysVisibleOnceSized(t *testing.T) {
 		t.Errorf("short terminal listTop = %d", m.listTop)
 	}
 	screen = strings.Join(stripAll(m.Render()), "\n")
-	if !strings.Contains(screen, "★ chore/bump-deps") || strings.Contains(screen, "feature/auth-session") {
+	if !strings.Contains(screen, "★ chore-bump-deps") || strings.Contains(screen, "feature-auth-session") {
 		t.Errorf("short terminal:\n%s", screen)
 	}
 }
@@ -429,13 +457,14 @@ func TestRenderContent(t *testing.T) {
 	}
 	all := strings.Join(screen, "\n")
 	for _, want := range []string{
-		"wt  /home/me/code/acme  feature/auth-session @ 8b7d2e0",
+		"wt  /home/me/code/acme  feature-auth-session  feature/auth-session @ 8b7d2e0",
 		"8 worktrees · 4 dirty",
-		"diff feature/auth-session · 3 files · +21 -6 · 1 untracked",
+		"diff feature-auth-session · 3 files · +21 -6 · 1 untracked",
 		"core.pager = less",
 		"worktrees 8",
 		"/   type to filter",
-		"★ feature/auth-session",
+		"★ feature-auth-session",
+		"  acme  ", // the main checkout by its directory name, as wt ls lists it
 		"● ↑2",
 		"↑1  ↓3",
 		"↓12",
@@ -509,7 +538,7 @@ func TestUntrackedOnlyTitle(t *testing.T) {
 	m := newModel(t, 140, 30)
 	key, _ := m.WantedDiff()
 	m.SetDiff(key, &repo.Diff{Untracked: []string{"a", "b"}})
-	if got := term.Strip(m.diffTitle()); got != "diff feature/auth-session · no tracked changes · 2 untracked" {
+	if got := term.Strip(m.diffTitle()); got != "diff feature-auth-session · no tracked changes · 2 untracked" {
 		t.Errorf("title = %q", got)
 	}
 }
@@ -543,7 +572,7 @@ func TestRenderStates(t *testing.T) {
 	want, _ := m.WantedDiff()
 	m.SetDiff(want, &repo.Diff{Mode: repo.ModeBranch, Base: "main", Lines: []string{"x"}, Files: 1, Adds: 1})
 	all = strings.Join(stripAll(m.Render()), "\n")
-	if !strings.Contains(all, "diff feature/auth-session vs main · 1 file · +1 -0") {
+	if !strings.Contains(all, "diff feature-auth-session vs main · 1 file · +1 -0") {
 		t.Errorf("branch title wrong:\n%s", all)
 	}
 
@@ -616,7 +645,7 @@ func TestNoColor(t *testing.T) {
 func TestKindsFromWT(t *testing.T) {
 	Colors = true
 	snap := snapshot()
-	snap.Source, snap.Linked, snap.Project = "wt", true, "acme"
+	snap.Source, snap.Linked, snap.Project = "wt", true, "acme-proj"
 	snap.Entries[0].Kind = "managed"
 	snap.Entries[2].Kind = "main"
 	snap.Entries[3].Kind, snap.Entries[3].Base, snap.Entries[3].Drifted = "base", true, true
@@ -633,11 +662,16 @@ func TestKindsFromWT(t *testing.T) {
 	lines := m.Render()
 	plain := stripAll(lines)
 	screen := strings.Join(plain, "\n")
-	if !strings.Contains(plain[0], " wt  acme  /home/me/code/acme ") {
+	if !strings.Contains(plain[0], " wt  acme-proj  /home/me/code/acme ") {
 		t.Errorf("title lacks the project: %q", plain[0])
 	}
+	// A project named like its directory is not repeated.
+	snap.Project = "acme"
+	if title := term.Strip(m.titleBar()); strings.Contains(title, "acme  /home") {
+		t.Errorf("title repeats the directory name: %q", title)
+	}
 	find := func(label string) string {
-		for _, l := range lines {
+		for _, l := range lines[1:] { // rows, not the title bar
 			if strings.Contains(term.Strip(l), label) {
 				return l
 			}
@@ -646,18 +680,23 @@ func TestKindsFromWT(t *testing.T) {
 		return ""
 	}
 	for label, color := range map[string]string{
-		"feature/auth-session":    cGreen,
-		" main ":                  cCyan,
-		"feature/worktree-prune!": cRed, // drifted base: red, with wt's "!" marker
-		"chore/bump-deps":         cMagenta,
-		"(peek: origin/main)":     cRed,
+		"feature-auth-session":    cGreen,
+		" acme ":                  cCyan,
+		"feature-worktree-prune!": cRed, // drifted base: red, with wt's "!" marker
+		"chore-bump-deps":         cMagenta,
+		"peek-main":               cRed,
 	} {
 		if row := find(label); !strings.Contains(row, color+label) && !strings.Contains(row, color+strings.TrimSpace(label)) {
 			t.Errorf("row %q not painted %q: %q", label, color, row)
 		}
 	}
-	if !strings.Contains(plain[4], "(peek: origin/main)") || !strings.Contains(plain[5], "★ feature/auth-session") {
+	if !strings.Contains(plain[4], "peek-main") || !strings.Contains(plain[5], "★ feature-auth-session") {
 		t.Errorf("rows out of place:\n%s", screen)
+	}
+	// The title bar carries what the rows leave out: the branch.
+	press(m, term.Key{Kind: term.KeyHome})
+	if title := term.Strip(m.titleBar()); !strings.Contains(title, "peek-main  (peek: origin/main) @ fffffff") {
+		t.Errorf("peek title = %q", title)
 	}
 }
 
@@ -669,6 +708,9 @@ func TestFilterIgnoresPaths(t *testing.T) {
 	}
 	snap.Entries[2].Path = "/devbox/workspace/tickets-app"
 	snap.Entries = append(snap.Entries, repo.Entry{Name: "dev-3", Branch: "dev-3", Path: "/devbox/workspace/dev-3"})
+	// A branch that mentions the term under another worktree name does
+	// not count: the filter is about the names the rows show.
+	snap.Entries = append(snap.Entries, repo.Entry{Name: "experiment", Branch: "dev-experiment", Path: "/devbox/workspace/experiment"})
 	Colors = true
 	m := New(snap)
 	m.SetSize(160, 30)
@@ -676,7 +718,11 @@ func TestFilterIgnoresPaths(t *testing.T) {
 	if got := labels(m); strings.Join(got, ",") != "dev-3" {
 		t.Errorf("'dev' matched %v", got)
 	}
-	if !strings.Contains(term.Strip(m.titleBar()), "1 of 9 worktrees") {
+	if !strings.Contains(term.Strip(m.titleBar()), "1 of 10 worktrees") {
 		t.Errorf("title = %q", term.Strip(m.titleBar()))
+	}
+	press(m, term.Key{Kind: term.KeyEsc}, term.Char('a'), term.Char('c'), term.Char('m'))
+	if got := labels(m); strings.Join(got, ",") != "main" {
+		t.Errorf("'acm' (the main checkout's directory) matched %v", got)
 	}
 }

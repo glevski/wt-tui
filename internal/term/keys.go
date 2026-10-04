@@ -29,6 +29,7 @@ const (
 	KeyPgUp
 	KeyPgDn
 	KeyF5
+	KeyKittyReply // the terminal's answer to the keyboard-protocol query: it supports it
 	KeyUnknown
 )
 
@@ -135,6 +136,10 @@ func csiKey(params string, final byte) Key {
 	first := fields[0]
 	switch final {
 	case 'u':
+		if strings.HasPrefix(first, "?") {
+			// CSI ? <flags> u: the reply to our CSI ? u query.
+			return Key{Kind: KeyKittyReply}
+		}
 		// kitty keyboard protocol: CSI <codepoint> ; <modifiers> u.
 		code, _ := strconv.Atoi(first)
 		mods := 0

@@ -88,8 +88,10 @@ func (t *Terminal) Write(s string) { _, _ = t.tty.WriteString(s) }
 // protocol's "disambiguate" mode (pushed on the alternate screen's own
 // stack and popped before leaving it) and xterm's modifyOtherKeys; a
 // terminal without either ignores the request and Ctrl+Enter stays Enter.
+// The query at the end (CSI ? u) makes a terminal that implements the
+// protocol answer with its flags, which arrives as a KeyKittyReply.
 const (
-	EnterScreen = "\x1b[?1049h\x1b[?25l\x1b[>1u\x1b[>4;2m"
+	EnterScreen = "\x1b[?1049h\x1b[?25l\x1b[>1u\x1b[>4;2m\x1b[?u"
 	LeaveScreen = "\x1b[>4;0m\x1b[<u\x1b[?25h\x1b[?1049l"
 	BeginFrame  = "\x1b[?2026h\x1b[H"
 	EndFrame    = "\x1b[?2026l"

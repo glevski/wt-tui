@@ -2,6 +2,7 @@ package ui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"wt-tui/internal/repo"
@@ -93,13 +94,19 @@ func (m *Model) Render() []string {
 func (m *Model) titleBar() string {
 	left := " " + paint(cBold+cCyan, "wt")
 	if m.Snap != nil {
-		if m.Snap.Linked && m.Snap.Project != "" {
+		// The linked project name, when it says more than the directory does.
+		if m.Snap.Linked && m.Snap.Project != "" && m.Snap.Project != filepath.Base(m.Snap.Root) {
 			left += "  " + m.Snap.Project
 		}
 		left += "  " + paint(cDim, tilde(m.Snap.Root))
 	}
 	if e, ok := m.Selected(); ok {
-		left += "  " + e.Label() + paint(cDim, " @ "+e.Short())
+		// The worktree's name, then its branch when that says more.
+		left += "  " + e.Name
+		if e.Label() != e.Name {
+			left += "  " + paint(cDim, e.Label())
+		}
+		left += paint(cDim, " @ "+e.Short())
 	}
 	var right string
 	switch {
@@ -159,9 +166,9 @@ func (m *Model) renderDiffPane(l layout) []string {
 	var hints string
 	switch {
 	case m.Fullscreen:
-		hints = fitHints([]string{"^↵ switch", "esc back", "j k scroll", "^d ^u half page", "g G ends", "← → pan", "^t mode", "^g pager"}, l.leftW-6)
+		hints = fitHints([]string{m.switchHint(), "esc back", "j k scroll", "^d ^u half page", "g G ends", "← → pan", "^t mode", "^g pager"}, l.leftW-6)
 	case m.Focus == PaneDiff:
-		hints = fitHints([]string{"↵ full screen", "^↵ switch", "j k scroll", "^d ^u half page", "g G ends", "← → pan", "esc list"}, l.leftW-6)
+		hints = fitHints([]string{"↵ full screen", m.switchHint(), "j k scroll", "^d ^u half page", "g G ends", "← → pan", "esc list"}, l.leftW-6)
 	}
 	rows = append(rows, border("╰", "╯", l.leftW, "", hints, style))
 	return rows
@@ -172,7 +179,7 @@ func (m *Model) diffTitle() string {
 	if !ok {
 		return paint(cDim, "diff")
 	}
-	title := paint(cDim, "diff ") + paint(cBold, e.Label())
+	title := paint(cDim, "diff ") + paint(cBold, e.Name)
 	d := m.Diff()
 	switch {
 	case d == nil:
@@ -227,7 +234,7 @@ func (m *Model) diffBody(l layout) []string {
 		note = append(note, paint(cDim, "^t shows what the branch adds over its base"))
 		return centered(l, note...)
 	case d.Empty():
-		return centered(l, paint(cDim, e.Label()+" has nothing on top of "+d.Base))
+		return centered(l, paint(cDim, e.Name+" has nothing on top of "+d.Base))
 	}
 	rows := make([]string, 0, l.bodyH)
 	for i := m.diffTop; i < len(m.lines) && len(rows) < l.bodyH; i++ {
@@ -309,7 +316,7 @@ func (m *Model) renderListPane(l layout) []string {
 
 	var hints string
 	if m.Focus == PaneList {
-		hints = fitHints([]string{"↑↓ move", "↵ diff", "^↵ switch", "esc clear", "^o projects", "^d ^u scroll", "^t mode", "^g pager"}, l.rightW-6)
+		hints = fitHints([]string{"↑↓ move", "↵ diff", m.switchHint(), "esc clear", "^o projects", "^d ^u scroll", "^t mode", "^g pager"}, l.rightW-6)
 	}
 	rows = append(rows, border("╰", "╯", l.rightW, "", hints, style))
 	return rows
@@ -413,7 +420,7 @@ func (m *Model) row(e repo.Entry, selected bool, c columns, width int) string {
 		b.WriteString(" ")
 	}
 	b.WriteString(" ")
-	name := e.Label()
+	name := rowName(e)
 	switch {
 	case e.Missing:
 		name = paintIn(cDim, name)
@@ -461,6 +468,15 @@ func (m *Model) row(e repo.Entry, selected bool, c columns, width int) string {
 	// The highlight must span the whole row, so every fragment's reset is
 	// followed by the row style again.
 	return base + strings.ReplaceAll(content, cReset, cReset+base) + cReset
+}
+
+// rowName is what a row shows: the worktree's directory name — what `wt
+// ls` lists and `wt ch` takes — with wt's "!" after a drifted base.
+func rowName(e repo.Entry) string {
+	if e.Drifted {
+		return e.Name + "!"
+	}
+	return e.Name
 }
 
 // kindColor is wt's own palette for worktree names (see `wt list`): cyan
@@ -521,6 +537,16 @@ func border(lc, rc string, width int, left, right, style string) string {
 		mid = "─ " + cReset + left + cReset + paint(style, " "+strings.Repeat("─", inner-lw-3))
 	}
 	return paint(style, lc+mid) + paint(style, rc)
+}
+
+// switchHint names the switch key the terminal can actually send:
+// Ctrl+Enter once the terminal has confirmed it tells it from Enter, ^s
+// otherwise.
+func (m *Model) switchHint() string {
+	if m.CtrlEnter {
+		return "^↵ switch"
+	}
+	return "^s switch"
 }
 
 // fitHints joins key hints with " · ", dropping trailing ones until the

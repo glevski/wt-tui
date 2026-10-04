@@ -72,6 +72,7 @@ type Model struct {
 	Fullscreen bool // the diff takes the whole width, the list is hidden
 	Mode       repo.Mode
 	Picker     *Picker // the project chooser, nil while closed
+	CtrlEnter  bool    // the terminal answered the keyboard-protocol query: Ctrl+Enter is a key here
 
 	diff     *repo.Diff
 	diffKey  DiffKey
@@ -203,6 +204,10 @@ func diffContent(d *repo.Diff) []string {
 
 // Update applies one key press and says what the application should do.
 func (m *Model) Update(k term.Key) Action {
+	if k.Kind == term.KeyKittyReply {
+		m.CtrlEnter = true
+		return ActNone
+	}
 	m.Message = ""
 	if m.Picker != nil {
 		return m.updatePicker(k)
@@ -456,10 +461,11 @@ func (m *Model) scrollDiff(delta int) {
 }
 
 // applyFilter recomputes the visible rows: every whitespace-separated term
-// must occur in the branch or the worktree name, case-insensitive — not
-// the path, whose shared prefix (/devbox/workspace/…) would make a term
-// like "dev" match everything. The selection stays on its worktree when
-// that survives the filter.
+// must occur in the worktree name, case-insensitive — the name the rows
+// show and `wt ch` takes, not the branch and not the path, whose shared
+// prefix (/devbox/workspace/…) would make a term like "dev" match
+// everything. The selection stays on its worktree when that survives the
+// filter.
 func (m *Model) applyFilter() {
 	var keep string
 	if e, ok := m.Selected(); ok {
@@ -489,7 +495,7 @@ func (m *Model) applyFilter() {
 }
 
 func matches(e repo.Entry, terms []string) bool {
-	hay := strings.ToLower(e.Label() + "\x00" + e.Name)
+	hay := strings.ToLower(e.Name)
 	for _, t := range terms {
 		if !strings.Contains(hay, t) {
 			return false

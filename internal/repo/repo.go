@@ -43,8 +43,9 @@ type Entry struct {
 	BaseHint string // the branch wt recorded the worktree was created from
 }
 
-// Label is what identifies the worktree in a list: its branch (with wt's
-// "!" suffix on a drifted base), a marker for a detached HEAD or a peek.
+// Label describes what the worktree has checked out, for the title bar:
+// its branch (with wt's "!" suffix on a drifted base), a marker for a
+// detached HEAD or a peek. Rows show the worktree name instead.
 func (e Entry) Label() string {
 	switch {
 	case e.Kind == "peek":

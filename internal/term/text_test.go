@@ -123,6 +123,18 @@ func TestParseKeys(t *testing.T) {
 		{"\x7f\x08", []Key{{Kind: KeyBackspace}, {Kind: KeyBackspace}}},
 		{"\x04\x15\x03", []Key{Ctrl('d'), Ctrl('u'), Ctrl('c')}},
 		{"é日", []Key{Char('é'), Char('日')}},
+		{"\x1b[13;5u", []Key{{Kind: KeyCtrlEnter}}},    // kitty: ctrl+enter
+		{"\x1b[27;5;13~", []Key{{Kind: KeyCtrlEnter}}}, // xterm modifyOtherKeys: ctrl+enter
+		{"\x1b[13u", []Key{{Kind: KeyEnter}}},
+		{"\x1b[27u", []Key{{Kind: KeyEsc}}},
+		{"\x1b[9;2u", []Key{{Kind: KeyBackTab}}},
+		{"\x1b[99;5u", []Key{Ctrl('c')}},
+		{"\x1b[27;5;115~", []Key{Ctrl('s')}},
+		{"\x1b[97;2u", []Key{Char('a')}},
+		{"\x1b[97;3u", nil},
+		{"\x1b[127u", []Key{{Kind: KeyBackspace}}},
+		{"\x1b[?1u", []Key{{Kind: KeyKittyReply}}}, // the terminal supports the protocol
+		{"\x1b[?0u", []Key{{Kind: KeyKittyReply}}},
 		{"\x1bx", nil},      // alt-x: no binding
 		{"\x1b[?1;2c", nil}, // a terminal reply: skipped whole
 		{"\x1b[?1;2cq", []Key{Char('q')}},

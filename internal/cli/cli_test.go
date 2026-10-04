@@ -34,7 +34,7 @@ func TestInit(t *testing.T) {
 		t.Fatalf("init zsh: code %d, stderr %q", code, errBuf.String())
 	}
 	script := out.String()
-	for _, want := range []string{"wt-ui() {", `eval "$_wt_script"`, `|| return $?`, "init|help|version|-h|--help|--version)"} {
+	for _, want := range []string{"wt-ui() {", `eval "$_wt_script"`, `|| return $?`, "init|help|version|-h|--help|--version)", "WT_UI_WRAPPER=1"} {
 		if !strings.Contains(script, want) {
 			t.Errorf("init output lacks %q:\n%s", want, script)
 		}
