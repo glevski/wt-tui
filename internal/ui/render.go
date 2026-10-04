@@ -37,7 +37,8 @@ func paint(attr, s string) string {
 }
 
 // layout is the frame geometry: the title bar on row 0, the two bordered
-// panes below it, 66% / 34%.
+// panes below it, 66% / 34% — or the diff pane alone, full width, in
+// full-screen mode.
 type layout struct {
 	leftW, rightW int // pane widths, borders included
 	paneH         int // pane height, borders included
@@ -50,6 +51,9 @@ type layout struct {
 func (m *Model) layout() layout {
 	l := layout{}
 	l.leftW = m.Width * 66 / 100
+	if m.Fullscreen {
+		l.leftW = m.Width
+	}
 	l.rightW = m.Width - l.leftW
 	l.paneH = m.Height - 1
 	l.bodyH = max(0, l.paneH-2)
@@ -74,6 +78,9 @@ func (m *Model) Render() []string {
 	lines := make([]string, 0, m.Height)
 	lines = append(lines, m.titleBar())
 	left := m.renderDiffPane(l)
+	if m.Fullscreen {
+		return append(lines, left...)
+	}
 	right := m.renderListPane(l)
 	for i := 0; i < l.paneH; i++ {
 		lines = append(lines, left[i]+right[i])
@@ -150,8 +157,11 @@ func (m *Model) renderDiffPane(l layout) []string {
 	}
 
 	var hints string
-	if m.Focus == PaneDiff {
-		hints = fitHints([]string{"j k scroll", "^d ^u half page", "g G ends", "← → pan", "↵ pager", "tab list", "q quit"}, l.leftW-6)
+	switch {
+	case m.Fullscreen:
+		hints = fitHints([]string{"↵ switch", "esc back", "j k scroll", "^d ^u half page", "g G ends", "← → pan", "^t mode", "^o pager"}, l.leftW-6)
+	case m.Focus == PaneDiff:
+		hints = fitHints([]string{"↵ full screen", "^s switch", "j k scroll", "^d ^u half page", "g G ends", "← → pan", "esc list"}, l.leftW-6)
 	}
 	rows = append(rows, border("╰", "╯", l.leftW, "", hints, style))
 	return rows
@@ -299,7 +309,7 @@ func (m *Model) renderListPane(l layout) []string {
 
 	var hints string
 	if m.Focus == PaneList {
-		hints = fitHints([]string{"↑↓ move", "↵ switch", "esc clear", "^d ^u diff", "^t mode", "^o pager", "tab diff"}, l.rightW-6)
+		hints = fitHints([]string{"↑↓ move", "↵ diff", "^s switch", "esc clear", "^d ^u scroll", "^t mode", "^o pager", "tab focus"}, l.rightW-6)
 	}
 	rows = append(rows, border("╰", "╯", l.rightW, "", hints, style))
 	return rows

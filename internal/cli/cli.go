@@ -1,4 +1,4 @@
-// Package cli is the wt-tui command line: it runs the browser and prints the
+// Package cli is the wt-ui command line: it runs the browser and prints the
 // jump script for the chosen worktree. Human-facing narration goes to
 // stderr, the jump script to stdout — that is what lets the wt-ui() shell
 // function capture and eval it.
@@ -16,16 +16,17 @@ import (
 	"wt-tui/internal/ui"
 )
 
-const usage = `wt-tui — interactive worktree browser (alias it to wt-ui via "init")
+const usage = `wt-ui — interactive worktree browser
 
 Usage:
-  wt-tui [-C <dir>]     open the browser for the repo containing dir
-                        (default: the current directory); Enter jumps to
-                        the selected worktree — through the wt-ui() shell
-                        function, which cd's and exports WT_HOME
-  wt-tui init <zsh|bash>  print the wt-ui() shell function; add to your rc
-                        file: eval "$(wt-tui init zsh)"
-  wt-tui --version      print the version (release tag) and commit
+  wt-ui [-C <dir>]      open the browser for the repo containing dir
+                        (default: the current directory); switching to a
+                        worktree prints a jump script — the wt-ui() shell
+                        function from "init" evals it, so it cd's and
+                        exports WT_HOME
+  wt-ui init <zsh|bash> print the wt-ui() shell function; add to your rc
+                        file: eval "$(wt-ui init zsh)"
+  wt-ui --version       print the version (release tag) and commit
 
 Screen: the selected worktree's diff on the left (66%%), the repo's
 worktrees on the right (34%%), most recently used first — the last wt
@@ -34,17 +35,20 @@ checkout, or the head commit's date for worktrees never jumped into.
 Keys:
   type              filter the worktrees (branch, name or path)
   ↑ ↓  ^p ^n        move          PgUp PgDn Home End  page / ends
-  Enter             switch to the worktree (prints the jump script)
+  Enter             open the diff full screen; Esc comes back
+  ^s                switch to the selected worktree (prints the jump)
   Esc               clear the filter; with none, quit      ^c  quit
   ^d ^u  ^f ^b      scroll the diff by half / full page    ^e ^y  by line
   ^t                toggle the diff: uncommitted changes (git diff HEAD)
                     or what the branch adds over its base (base...HEAD)
   ^o                open the diff in git's own pager (core.pager)
-  Tab               move the keyboard to the diff pane: j k d u f b g G
-                    scroll like less, ← → pan, Enter opens the pager,
-                    Tab or Esc return, q quits
+  Tab               move the keyboard to the diff pane, split view kept
   ^r  F5            refresh now (the list refreshes itself every 2s)
   ^z                suspend
+
+In the diff (full screen or focused): j k d u f b g G scroll like less,
+← → pan long lines, Enter switches to the worktree from full screen,
+Esc or q return to the list.
 
 Env: NO_COLOR disables colors; WT_JUMP=json prints the jump as one JSON
 line ({"cd":…,"home":…}) instead of shell code, for editor integrations.
@@ -68,7 +72,7 @@ func Run(args []string) int {
 			return 0
 		case "init":
 			if err := shellInit(args[1:]); err != nil {
-				fmt.Fprintf(stderr, "wt-tui: %v\n", err)
+				fmt.Fprintf(stderr, "wt-ui: %v\n", err)
 				return 2
 			}
 			return 0
@@ -76,7 +80,7 @@ func Run(args []string) int {
 	}
 	dir, err := parseDir(args)
 	if err != nil {
-		fmt.Fprintf(stderr, "wt-tui: %v\n", err)
+		fmt.Fprintf(stderr, "wt-ui: %v\n", err)
 		fmt.Fprint(stderr, usage)
 		return 2
 	}
@@ -88,10 +92,10 @@ func Run(args []string) int {
 	case errors.Is(err, ui.ErrInterrupted):
 		return 130
 	case errors.Is(err, term.ErrNoTTY):
-		fmt.Fprintln(stderr, "wt-tui: needs an interactive terminal")
+		fmt.Fprintln(stderr, "wt-ui: needs an interactive terminal")
 		return 1
 	case err != nil:
-		fmt.Fprintf(stderr, "wt-tui: %v\n", err)
+		fmt.Fprintf(stderr, "wt-ui: %v\n", err)
 		return 1
 	case jump == nil:
 		return 0

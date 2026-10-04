@@ -24,9 +24,9 @@ func versionString() string {
 		c = vcsRevision()
 	}
 	if c != "" {
-		return fmt.Sprintf("wt-tui %s (%s)", v, c)
+		return fmt.Sprintf("wt-ui %s (%s)", v, c)
 	}
-	return "wt-tui " + v
+	return "wt-ui " + v
 }
 
 func vcsRevision() string {

@@ -1,9 +1,9 @@
-# wt-tui
+# wt-ui
 
 An interactive, two-pane worktree browser for git, built as a companion to
 [wt](https://github.com/glevski/wt): the selected worktree's diff on the
 left, the repo's worktrees on the right, most recently used first. Type to
-filter, Enter to jump there.
+filter, Enter to read the diff full screen, `^s` to jump there.
 
 ```
  wt  ~/code/acme  feature/auth-session @ 8b7d2e0                              8 worktrees · 4 dirty
@@ -18,7 +18,7 @@ filter, Enter to jump there.
 │  import type { User } from "../types";                                   ││   spike/tui-ratatui     ● ↑14      e5f60b2  2w │
 │ …                                                                        ││   release/0.4                      0a8c7d1 1mo │
 │                                                                          ││   hotfix/path-escape          ↓40  b3d91f6 2mo │
-╰──────────────────────────────────────────────────────────────────────────╯╰─ ↑↓ move · ↵ switch · esc clear · ^d ^u diff ─╯
+╰──────────────────────────────────────────────────────────────────────────╯╰── ↑↓ move · ↵ diff · ^s switch · esc clear ─╯
 ```
 
 Stdlib-only Go, one binary, no configuration. With wt installed it reads
@@ -35,28 +35,31 @@ Prebuilt binary (macOS/Linux, checksum-verified, installs to `~/.local/bin`):
 curl -fsSL https://github.com/glevski/wt-tui/raw/main/install.sh | sh
 ```
 
-The installer also adds `eval "$(wt-tui init zsh)"` (or `init bash`) to your
+The installer also adds `eval "$(wt-ui init zsh)"` (or `init bash`) to your
 `~/.zshrc` / `~/.bashrc` unless it is already there. To keep it away from the
-rc file and add the line yourself, run it as `curl … | WT_TUI_NO_MODIFY_RC=1 sh`.
+rc file and add the line yourself, run it as `curl … | WT_UI_NO_MODIFY_RC=1 sh`.
 
 Or from a checkout:
 
 ```sh
-make install                                   # builds ~/.local/bin/wt-tui
-echo 'eval "$(wt-tui init zsh)"' >> ~/.zshrc   # or: init bash
+make install                                  # builds ~/.local/bin/wt-ui
+echo 'eval "$(wt-ui init zsh)"' >> ~/.zshrc   # or: init bash
 ```
 
-The `init` line defines the **`wt-ui`** shell function. It is what makes
-Enter actually `cd` you: a child process can never change its parent
-shell's directory, so the binary prints a tiny jump script (`cd …` plus
-`export WT_HOME=…`, the same shape as wt's own jumps) and the function evals
-it. Run the binary bare and you just see that script instead.
+The binary is `wt-ui`; the `init` line wraps it in a **`wt-ui` shell
+function** of the same name. That is what makes a switch actually `cd`
+you: a child process can never change its parent shell's directory, so the
+binary prints a tiny jump script (`cd …` plus `export WT_HOME=…`, the same
+shape as wt's own jumps) and the function evals it. Run the binary without
+the function and you just see that script instead. The function also sets
+`_wt_prev`, the per-shell variable `wt switch` toggles on, so `wt switch`
+takes you back to where you were before the jump.
 
 ## Use
 
 ```sh
 wt-ui            # in any worktree of the repo
-wt-tui -C ~/code/acme
+wt-ui -C ~/code/acme
 ```
 
 The screen is split 66% / 34%:
@@ -91,10 +94,12 @@ The screen is split 66% / 34%:
 
 Typing filters the list — every word you type has to occur in the branch,
 the worktree's directory name or its path. The selection follows the
-filter, and the diff follows the selection. Everything refreshes itself
-every two seconds (`git status` per worktree, in parallel, with
-`GIT_OPTIONAL_LOCKS=0` so it never fights your own git for the index
-lock).
+filter, and the diff follows the selection. Enter opens the diff **full
+screen**, hiding the list; Esc brings the list back. Enter goes one level
+deeper each time — list, full-screen diff, then the worktree itself — and
+`^s` switches directly from anywhere. Everything refreshes itself every two
+seconds (`git status` per worktree, in parallel, with `GIT_OPTIONAL_LOCKS=0`
+so it never fights your own git for the index lock).
 
 ### Keys
 
@@ -103,28 +108,30 @@ lock).
 | type | filter the worktrees |
 | `↑` `↓`, `^p` `^n` | move the selection |
 | `PgUp` `PgDn` `Home` `End` | page the list / jump to its ends |
-| `Enter` | switch to the selected worktree |
+| `Enter` | open the diff full screen (Esc comes back) |
+| `^s` | switch to the selected worktree |
 | `Esc` | clear the filter; with none, quit (`^c` always quits) |
 | `^d` `^u` | scroll the diff half a page |
 | `^f` `^b`, `^e` `^y` | scroll the diff a page / a line |
 | `^t` | toggle the diff: uncommitted changes ↔ branch vs its base |
 | `^o` | open the diff in git's pager |
-| `Tab`, `→` | move the keyboard to the diff pane |
+| `Tab`, `→` | move the keyboard to the diff pane, keeping the split |
 | `^r`, `F5` | refresh now |
 | `^z` | suspend |
 
-In the diff pane the keys are less's: `j` `k` scroll, `d` `u` half a page,
-`f` `b` `Space` a page, `g` `G` to the ends, `←` `→` (or `h` `l`) pan long
-lines, `0` back to the left edge, `Enter` opens the pager, `Tab`, `Esc` or
-`/` return to the list, `q` quits.
+In the diff, full screen or focused, the keys are less's: `j` `k` scroll,
+`d` `u` half a page, `f` `b` `Space` a page, `g` `G` to the ends, `←` `→`
+(or `h` `l`) pan long lines, `0` back to the left edge. `Enter` opens full
+screen from the split view and switches to the worktree from full screen;
+`Esc`, `q`, `Tab` or `/` return to the list.
 
 ## Scripting and editor integration
 
-`WT_JUMP=json wt-tui` prints the jump as one JSON line instead of shell
+`WT_JUMP=json wt-ui` prints the jump as one JSON line instead of shell
 code — the same contract as wt's jump commands:
 
 ```sh
-$ WT_JUMP=json wt-tui
+$ WT_JUMP=json wt-ui
 {"cd":"/home/you/worktrees/acme/feature-auth","home":"/home/you/code/acme"}
 ```
 
@@ -137,14 +144,14 @@ jump. Leaving without choosing prints nothing and exits 0; `^c` exits 130.
 [wt](https://github.com/glevski/wt) creates, forks and removes worktrees
 and records a stamp (`wt-checkout` in the worktree's git admin dir) every
 time it jumps into one. When the `worktree` binary is on your PATH,
-wt-tui runs `worktree list --json` on every refresh and takes the rows
+wt-ui runs `worktree list --json` on every refresh and takes the rows
 from there — kinds, dirty state, checkout stamps, recorded base branches,
 drift and peeks — the same document wt-vscode is built on. Only the
 upstream position (`↑n ↓n`) and the diff come from git. When you jump
 from wt-ui it touches the same stamp wt does, so `wt ls`, `wt ch`'s
 picker and wt-ui agree on what you used last.
 
-Without wt, wt-tui reads `git worktree list` and wt's marker files
+Without wt, wt-ui reads `git worktree list` and wt's marker files
 itself: the same ordering, minus kinds and peeks. It never creates or
 removes anything either way.
 

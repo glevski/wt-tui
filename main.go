@@ -1,6 +1,6 @@
-// Command wt-tui is an interactive two-pane worktree browser for git: the
+// Command wt-ui is an interactive two-pane worktree browser for git: the
 // selected worktree's diff on the left, the repo's worktrees by recency on
-// the right. See `wt-tui help`.
+// the right. See `wt-ui help`.
 package main
 
 import (

@@ -19,11 +19,11 @@ func capture(t *testing.T) (*bytes.Buffer, *bytes.Buffer) {
 
 func TestHelpAndVersion(t *testing.T) {
 	out, _ := capture(t)
-	if code := Run([]string{"help"}); code != 0 || !strings.Contains(out.String(), "wt-tui init") {
+	if code := Run([]string{"help"}); code != 0 || !strings.Contains(out.String(), "wt-ui init") {
 		t.Fatalf("help: code %d, out %q", code, out.String())
 	}
 	out.Reset()
-	if code := Run([]string{"--version"}); code != 0 || !strings.HasPrefix(out.String(), "wt-tui ") {
+	if code := Run([]string{"--version"}); code != 0 || !strings.HasPrefix(out.String(), "wt-ui ") {
 		t.Fatalf("version: code %d, out %q", code, out.String())
 	}
 }
@@ -34,7 +34,7 @@ func TestInit(t *testing.T) {
 		t.Fatalf("init zsh: code %d, stderr %q", code, errBuf.String())
 	}
 	script := out.String()
-	for _, want := range []string{"wt-ui() {", `eval "$_wt_script"`, `|| return $?`} {
+	for _, want := range []string{"wt-ui() {", `eval "$_wt_script"`, `|| return $?`, "init|help|version|-h|--help|--version)"} {
 		if !strings.Contains(script, want) {
 			t.Errorf("init output lacks %q:\n%s", want, script)
 		}

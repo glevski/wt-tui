@@ -39,7 +39,7 @@ func adminDir(worktreePath string) (string, error) {
 	return dir, nil
 }
 
-// CheckoutStamp reports when wt (or wt-tui) last jumped into the worktree.
+// CheckoutStamp reports when wt (or wt-ui) last jumped into the worktree.
 func CheckoutStamp(worktreePath string) (time.Time, bool) {
 	dir, err := adminDir(worktreePath)
 	if err != nil {

@@ -140,8 +140,8 @@ func TestFilter(t *testing.T) {
 
 func TestActions(t *testing.T) {
 	m := newModel(t, 120, 30)
-	if a := press(m, term.Key{Kind: term.KeyEnter}); a != ActSwitch {
-		t.Errorf("enter = %v", a)
+	if a := press(m, term.Ctrl('s')); a != ActSwitch {
+		t.Errorf("^s = %v", a)
 	}
 	if a := press(m, term.Ctrl('c')); a != ActInterrupt {
 		t.Errorf("^c = %v", a)
@@ -165,16 +165,13 @@ func TestActions(t *testing.T) {
 		t.Errorf("^o with a diff = %v", a)
 	}
 	press(m, term.Key{Kind: term.KeyTab})
-	if m.Focus != PaneDiff {
-		t.Error("tab did not focus the diff")
+	if m.Focus != PaneDiff || m.Fullscreen {
+		t.Error("tab did not focus the diff in the split view")
 	}
-	if a := press(m, term.Char('q')); a != ActQuit {
-		t.Errorf("q in the diff = %v", a)
+	if a := press(m, term.Char('q')); a != ActNone || m.Focus != PaneList {
+		t.Errorf("q in the diff = %v, focus %v", a, m.Focus)
 	}
-	if a := press(m, term.Key{Kind: term.KeyEnter}); a != ActPager {
-		t.Errorf("enter in the diff = %v", a)
-	}
-	press(m, term.Char('/'))
+	press(m, term.Key{Kind: term.KeyTab}, term.Char('/'))
 	if m.Focus != PaneList {
 		t.Error("/ did not return to the list")
 	}
@@ -185,6 +182,72 @@ func TestActions(t *testing.T) {
 	press(m, term.Key{Kind: term.KeyEsc})
 	if m.Focus != PaneList {
 		t.Error("esc did not return to the list")
+	}
+	if a := press(m, term.Key{Kind: term.KeyTab}, term.Ctrl('s')); a != ActSwitch {
+		t.Errorf("^s from the diff = %v", a)
+	}
+}
+
+// Enter goes one level deeper each time: list → full-screen diff → the
+// worktree; Esc and q come back up.
+func TestFullscreen(t *testing.T) {
+	m := newModel(t, 120, 30)
+	key, _ := m.WantedDiff()
+	m.SetDiff(key, &repo.Diff{Lines: []string{"\x1b[32m+x\x1b[m"}, Files: 1, Adds: 1})
+	if a := press(m, term.Key{Kind: term.KeyEnter}); a != ActNone || !m.Fullscreen || m.Focus != PaneDiff {
+		t.Fatalf("enter: action %v fullscreen %v focus %v", a, m.Fullscreen, m.Focus)
+	}
+	lines := m.Render()
+	if len(lines) != 30 {
+		t.Fatalf("%d lines", len(lines))
+	}
+	for i, l := range lines {
+		if got := term.Width(l); got != 120 {
+			t.Errorf("line %d is %d wide", i, got)
+		}
+	}
+	screen := strings.Join(stripAll(lines), "\n")
+	if strings.Contains(screen, "worktrees 8") || strings.Contains(screen, "╮╭") || strings.Contains(screen, "type to filter") {
+		t.Errorf("list pane still drawn:\n%s", screen)
+	}
+	for _, want := range []string{"diff feature/auth-session · 1 file · +1 -0", "core.pager = less", "+x", "↵ switch · esc back"} {
+		if !strings.Contains(screen, want) {
+			t.Errorf("full screen lacks %q:\n%s", want, screen)
+		}
+	}
+	// The diff pane spans the whole width: its top border ends at the edge.
+	if top := term.Strip(lines[1]); !strings.HasSuffix(top, "─╮") || term.Width(top) != 120 {
+		t.Errorf("top border = %q", top)
+	}
+	if a := press(m, term.Key{Kind: term.KeyEnter}); a != ActSwitch {
+		t.Errorf("enter in full screen = %v", a)
+	}
+	press(m, term.Key{Kind: term.KeyEsc})
+	if m.Fullscreen || m.Focus != PaneList {
+		t.Errorf("esc: fullscreen %v focus %v", m.Fullscreen, m.Focus)
+	}
+	screen = strings.Join(stripAll(m.Render()), "\n")
+	if !strings.Contains(screen, "worktrees 8") || !strings.Contains(screen, "↵ diff · ^s switch") {
+		t.Errorf("split view not back:\n%s", screen)
+	}
+	press(m, term.Key{Kind: term.KeyEnter}, term.Char('q'))
+	if m.Fullscreen {
+		t.Error("q did not leave full screen")
+	}
+	press(m, term.Key{Kind: term.KeyEnter}, term.Key{Kind: term.KeyTab})
+	if m.Fullscreen || m.Focus != PaneList {
+		t.Error("tab did not leave full screen")
+	}
+	// From the split diff focus, Enter opens full screen rather than switching.
+	press(m, term.Key{Kind: term.KeyTab})
+	if a := press(m, term.Key{Kind: term.KeyEnter}); a != ActNone || !m.Fullscreen {
+		t.Errorf("enter from the split diff: %v, fullscreen %v", a, m.Fullscreen)
+	}
+	// With nothing selected Enter does nothing.
+	m2 := newModel(t, 120, 30)
+	press(m2, term.Char('z'), term.Char('z'), term.Char('z'))
+	if press(m2, term.Key{Kind: term.KeyEnter}); m2.Fullscreen {
+		t.Error("full screen with no selection")
 	}
 }
 
@@ -386,7 +449,7 @@ func TestRenderContent(t *testing.T) {
 		"+import x",
 		"untracked (1):",
 		"notes.md",
-		"↑↓ move · ↵ switch · esc clear",
+		"↑↓ move · ↵ diff · ^s switch · esc clear",
 	} {
 		if !strings.Contains(all, want) {
 			t.Errorf("screen lacks %q:\n%s", want, all)
@@ -412,7 +475,7 @@ func TestRenderContent(t *testing.T) {
 
 	press(m, term.Key{Kind: term.KeyTab})
 	all = strings.Join(stripAll(m.Render()), "\n")
-	if !strings.Contains(all, "j k scroll") || strings.Contains(all, "↵ switch") {
+	if !strings.Contains(all, "↵ full screen · ^s switch · j k scroll") || strings.Contains(all, "↵ diff") {
 		t.Errorf("diff-focus hints wrong:\n%s", all)
 	}
 	if !strings.Contains(all, "│ / au  ") {
@@ -428,7 +491,7 @@ func TestRenderContent(t *testing.T) {
 	// stray gap at its left end.
 	m = newModel(t, 200, 30)
 	all = strings.Join(stripAll(m.Render()), "\n")
-	if !strings.Contains(all, "↑↓ move · ↵ switch · esc clear · ^d ^u diff · ^t mode") {
+	if !strings.Contains(all, "↑↓ move · ↵ diff · ^s switch · esc clear · ^d ^u scroll") {
 		t.Errorf("hints at 200 cols:\n%s", all)
 	}
 	if strings.Contains(all, "╰─  ─") {

@@ -14,7 +14,7 @@ import (
 // scripts and editor integrations (fields are only ever added). It carries
 // what git alone cannot tell — each worktree's kind, the base branch it was
 // created from, drift of a base worktree, and peeks, which are invisible to
-// git — plus the checkout stamps and dirty state wt-tui would otherwise
+// git — plus the checkout stamps and dirty state wt-ui would otherwise
 // compute itself.
 type listDoc struct {
 	Schema    int    `json:"schema"`

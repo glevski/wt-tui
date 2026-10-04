@@ -34,9 +34,9 @@ jobs:
             GOOS="${target%-*}" GOARCH="${target#*-}" CGO_ENABLED=0 \
               go build -trimpath \
                 -ldflags "-s -w -X wt-tui/internal/cli.version=$VERSION -X wt-tui/internal/cli.commit=$COMMIT" \
-                -o dist/wt-tui .
-            tar -C dist -czf "dist/wt-tui-$target.tar.gz" wt-tui
-            rm dist/wt-tui
+                -o dist/wt-ui .
+            tar -C dist -czf "dist/wt-ui-$target.tar.gz" wt-ui
+            rm dist/wt-ui
           done
           cd dist && sha256sum *.tar.gz > SHA256SUMS
 
@@ -45,5 +45,5 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: >
           gh release create "${{ github.ref_name }}"
-          dist/wt-tui-*.tar.gz dist/SHA256SUMS
+          dist/wt-ui-*.tar.gz dist/SHA256SUMS
           --title "${{ github.ref_name }}" --generate-notes

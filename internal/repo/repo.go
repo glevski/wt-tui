@@ -24,7 +24,7 @@ type Entry struct {
 	Missing  bool   // the directory is gone (git would prune it)
 	Kind     string // wt's classification: main, base, managed, external, peek; "" when unknown
 	Main     bool   // the main checkout
-	Current  bool   // the worktree wt-tui was started in
+	Current  bool   // the worktree wt-ui was started in
 	Base     bool   // a wt base worktree
 	Drifted  bool   // a base worktree that left the branch it is pinned to
 	Rev      string // the revision a peek shows

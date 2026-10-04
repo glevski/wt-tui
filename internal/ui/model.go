@@ -66,8 +66,9 @@ type Model struct {
 	sel     int   // index into visible, -1 with nothing to select
 	listTop int   // first visible row shown
 
-	Focus Pane
-	Mode  repo.Mode
+	Focus      Pane
+	Fullscreen bool // the diff takes the whole width, the list is hidden
+	Mode       repo.Mode
 
 	diff     *repo.Diff
 	diffKey  DiffKey
@@ -198,8 +199,17 @@ func (m *Model) Update(k term.Key) Action {
 	case k == term.Ctrl('t'):
 		m.toggleMode()
 		return ActNone
+	case k == term.Ctrl('s'):
+		if _, ok := m.Selected(); ok {
+			return ActSwitch
+		}
+		return ActNone
 	case k.Kind == term.KeyTab || k.Kind == term.KeyBackTab:
-		m.Focus = 1 - m.Focus
+		if m.Focus == PaneDiff {
+			m.toList()
+		} else {
+			m.Focus = PaneDiff
+		}
 		return ActNone
 	case k == term.Ctrl('d'):
 		m.scrollDiff(m.layout().bodyH / 2)
@@ -229,10 +239,7 @@ func (m *Model) Update(k term.Key) Action {
 func (m *Model) updateList(k term.Key) Action {
 	switch k.Kind {
 	case term.KeyEnter:
-		if _, ok := m.Selected(); ok {
-			return ActSwitch
-		}
-		return ActNone
+		m.openFullscreen()
 	case term.KeyEsc:
 		if m.Filter != "" {
 			m.Filter = ""
@@ -283,9 +290,17 @@ func (m *Model) updateDiff(k term.Key) Action {
 	page := m.layout().bodyH
 	switch k.Kind {
 	case term.KeyEsc, term.KeyLeft:
-		m.Focus = PaneList
+		m.toList()
 	case term.KeyEnter:
-		return m.pager()
+		// Enter goes one level deeper each time: list → full-screen diff →
+		// the worktree itself.
+		if !m.Fullscreen {
+			m.openFullscreen()
+			return ActNone
+		}
+		if _, ok := m.Selected(); ok {
+			return ActSwitch
+		}
 	case term.KeyUp:
 		m.scrollDiff(-1)
 	case term.KeyDown:
@@ -309,10 +324,8 @@ func (m *Model) updateDiff(k term.Key) Action {
 		}
 	case term.KeyRune:
 		switch k.Rune {
-		case 'q':
-			return ActQuit
-		case '/':
-			m.Focus = PaneList
+		case 'q', '/':
+			m.toList()
 		case 'j':
 			m.scrollDiff(1)
 		case 'k':
@@ -338,6 +351,26 @@ func (m *Model) updateDiff(k term.Key) Action {
 		}
 	}
 	return ActNone
+}
+
+// openFullscreen gives the diff the whole screen; the list pane hides and
+// the keyboard goes to the diff.
+func (m *Model) openFullscreen() {
+	if _, ok := m.Selected(); !ok {
+		return
+	}
+	m.Fullscreen = true
+	m.Focus = PaneDiff
+	m.diffLeft = 0
+	m.scrollDiff(0)
+}
+
+// toList returns the keyboard to the list, leaving full-screen mode.
+func (m *Model) toList() {
+	m.Fullscreen = false
+	m.Focus = PaneList
+	m.diffLeft = 0
+	m.scrollDiff(0)
 }
 
 // pager asks for the real pager when there is a diff to show in it — git
