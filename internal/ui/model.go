@@ -456,8 +456,10 @@ func (m *Model) scrollDiff(delta int) {
 }
 
 // applyFilter recomputes the visible rows: every whitespace-separated term
-// must occur in the branch, the worktree name or its path, case-insensitive.
-// The selection stays on its worktree when that survives the filter.
+// must occur in the branch or the worktree name, case-insensitive — not
+// the path, whose shared prefix (/devbox/workspace/…) would make a term
+// like "dev" match everything. The selection stays on its worktree when
+// that survives the filter.
 func (m *Model) applyFilter() {
 	var keep string
 	if e, ok := m.Selected(); ok {
@@ -487,7 +489,7 @@ func (m *Model) applyFilter() {
 }
 
 func matches(e repo.Entry, terms []string) bool {
-	hay := strings.ToLower(e.Label() + "\x00" + e.Name + "\x00" + e.Path)
+	hay := strings.ToLower(e.Label() + "\x00" + e.Name)
 	for _, t := range terms {
 		if !strings.Contains(hay, t) {
 			return false

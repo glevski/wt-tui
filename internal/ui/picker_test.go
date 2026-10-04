@@ -191,3 +191,33 @@ func TestPickerEmptyRegistryAndNoRepo(t *testing.T) {
 		t.Errorf("after the snapshot: message %q visible %d", m.Message, len(m.Visible()))
 	}
 }
+
+func TestPickerFilterIgnoresSharedDirectory(t *testing.T) {
+	m := newModel(t, 120, 30)
+	press(m, term.Ctrl('o'))
+	m.SetProjects([]repo.Project{
+		{Name: "tickets-app", Root: "/devbox/workspace/tickets-app"},
+		{Name: "wt", Root: "/devbox/workspace/wt"},
+		{Name: "site", Root: "/devbox/workspace/clients/devils-site"},
+	})
+	press(m, term.Char('d'), term.Char('e'), term.Char('v'))
+	var got []string
+	for _, v := range m.Picker.visible {
+		got = append(got, m.Picker.Items[v].Name)
+	}
+	if strings.Join(got, ",") != "site" {
+		t.Errorf("'dev' matched %v, want only the project whose own path has it", got)
+	}
+	if commonDir([]repo.Project{{Root: "/a/b/c"}, {Root: "/a/b/d"}}) != "/a/b/" {
+		t.Error("commonDir of siblings")
+	}
+	if commonDir([]repo.Project{{Root: "/a/b"}, {Root: "/a/b/c"}}) != "/a/" {
+		t.Error("commonDir of nested roots")
+	}
+	if commonDir([]repo.Project{{Root: "/x"}, {Root: "/y"}}) != "/" {
+		t.Error("commonDir at the top")
+	}
+	if commonDir([]repo.Project{{Root: "/only/one"}}) != "/only/" {
+		t.Error("commonDir of one")
+	}
+}

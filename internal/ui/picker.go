@@ -157,8 +157,11 @@ func (p *Picker) keepVisible(rows int) {
 	p.top = max(0, min(p.top, max(0, len(p.visible)-rows)))
 }
 
-// applyFilter keeps the projects whose name or path contains every word
-// of the filter, keeping the selection on its project when it survives.
+// applyFilter keeps the projects whose name, or the part of the path that
+// tells the projects apart, contains every word of the filter; the
+// directory they all share (/devbox/workspace/) is left out so a word
+// from it does not match them all. The selection stays on its project
+// when it survives.
 func (p *Picker) applyFilter() {
 	keep := ""
 	if p.sel >= 0 && p.sel < len(p.visible) {
@@ -167,8 +170,9 @@ func (p *Picker) applyFilter() {
 	terms := strings.Fields(strings.ToLower(p.Filter))
 	p.visible = p.visible[:0]
 	p.sel = -1
+	common := commonDir(p.Items)
 	for i, it := range p.Items {
-		hay := strings.ToLower(it.Name + "\x00" + it.Root)
+		hay := strings.ToLower(it.Name + "\x00" + strings.TrimPrefix(it.Root, common))
 		ok := true
 		for _, t := range terms {
 			if !strings.Contains(hay, t) {
@@ -188,6 +192,28 @@ func (p *Picker) applyFilter() {
 		p.sel = 0
 	}
 	p.top = 0
+}
+
+// commonDir is the directory every project's root lies in, "/"-terminated,
+// "" when they share none.
+func commonDir(items []repo.Project) string {
+	if len(items) == 0 {
+		return ""
+	}
+	common := items[0].Root
+	for _, it := range items[1:] {
+		for !strings.HasPrefix(it.Root, common) {
+			cut := strings.LastIndex(strings.TrimSuffix(common, "/"), "/")
+			if cut < 0 {
+				return ""
+			}
+			common = common[:cut+1]
+		}
+	}
+	if i := strings.LastIndex(common, "/"); i >= 0 {
+		common = common[:i+1]
+	}
+	return common
 }
 
 // overlayPicker draws the modal over a rendered frame.

@@ -660,3 +660,23 @@ func TestKindsFromWT(t *testing.T) {
 		t.Errorf("rows out of place:\n%s", screen)
 	}
 }
+
+// A shared path prefix must not make a filter match every row.
+func TestFilterIgnoresPaths(t *testing.T) {
+	snap := snapshot()
+	for i := range snap.Entries {
+		snap.Entries[i].Path = "/devbox/workspace/tickets-app/.worktrees/" + snap.Entries[i].Name
+	}
+	snap.Entries[2].Path = "/devbox/workspace/tickets-app"
+	snap.Entries = append(snap.Entries, repo.Entry{Name: "dev-3", Branch: "dev-3", Path: "/devbox/workspace/dev-3"})
+	Colors = true
+	m := New(snap)
+	m.SetSize(160, 30)
+	press(m, term.Char('d'), term.Char('e'), term.Char('v'))
+	if got := labels(m); strings.Join(got, ",") != "dev-3" {
+		t.Errorf("'dev' matched %v", got)
+	}
+	if !strings.Contains(term.Strip(m.titleBar()), "1 of 9 worktrees") {
+		t.Errorf("title = %q", term.Strip(m.titleBar()))
+	}
+}
