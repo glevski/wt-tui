@@ -129,9 +129,10 @@ Started outside any repository, wt-ui opens on the picker directly.
 | `Esc` | clear the filter; with none, quit (`^c` always quits) |
 | `^d` `^u` | scroll the diff half a page |
 | `^f` `^b`, `^e` `^y` | scroll the diff a page / a line |
+| `←` `→` | pan the diff sideways |
 | `^t` | toggle the diff: uncommitted changes ↔ branch vs its base |
 | `^g` | open the diff in git's pager |
-| `Tab`, `→` | move the keyboard to the diff pane, keeping the split |
+| `Tab` | move the keyboard to the diff pane, keeping the split |
 | `^r`, `F5` | refresh now |
 | `^z` | suspend |
 

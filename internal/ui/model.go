@@ -77,6 +77,7 @@ type Model struct {
 	diff     *repo.Diff
 	diffKey  DiffKey
 	lines    []string // the diff pane's content, made printable once per diff
+	widest   int      // columns of the widest line, the limit for panning
 	diffTop  int
 	diffLeft int
 }
@@ -100,7 +101,7 @@ func (m *Model) Reset(note string) {
 	m.Filter = ""
 	m.visible = m.visible[:0]
 	m.sel, m.listTop = -1, 0
-	m.diff, m.diffKey, m.lines = nil, DiffKey{}, nil
+	m.diff, m.diffKey, m.lines, m.widest = nil, DiffKey{}, nil, 0
 	m.diffTop, m.diffLeft = 0, 0
 	m.Fullscreen, m.Focus = false, PaneList
 	m.Message = note
@@ -180,7 +181,12 @@ func (m *Model) SetDiff(key DiffKey, d *repo.Diff) {
 	}
 	m.diff, m.diffKey = d, key
 	m.lines = diffContent(d)
+	m.widest = 0
+	for _, l := range m.lines {
+		m.widest = max(m.widest, term.Width(l))
+	}
 	m.scrollDiff(0)
+	m.panDiff(0)
 }
 
 // diffContent is what the pane draws for a diff: its lines, then the
@@ -261,6 +267,12 @@ func (m *Model) Update(k term.Key) Action {
 	case k == term.Ctrl('y'):
 		m.scrollDiff(-1)
 		return ActNone
+	case k.Kind == term.KeyLeft:
+		m.panDiff(-8)
+		return ActNone
+	case k.Kind == term.KeyRight:
+		m.panDiff(8)
+		return ActNone
 	}
 	if m.Focus == PaneDiff {
 		return m.updateDiff(k)
@@ -291,8 +303,6 @@ func (m *Model) updateList(k term.Key) Action {
 		m.move(-max(1, m.layout().listRows))
 	case term.KeyPgDn:
 		m.move(max(1, m.layout().listRows))
-	case term.KeyRight:
-		m.Focus = PaneDiff
 	case term.KeyBackspace:
 		if m.Filter != "" {
 			_, size := utf8.DecodeLastRuneInString(m.Filter)
@@ -321,7 +331,7 @@ func (m *Model) updateList(k term.Key) Action {
 func (m *Model) updateDiff(k term.Key) Action {
 	page := m.layout().bodyH
 	switch k.Kind {
-	case term.KeyEsc, term.KeyLeft:
+	case term.KeyEsc:
 		m.toList()
 	case term.KeyEnter:
 		// From the split view Enter opens full screen; in full screen it
@@ -343,8 +353,6 @@ func (m *Model) updateDiff(k term.Key) Action {
 		m.diffTop = 0
 	case term.KeyEnd:
 		m.scrollDiff(len(m.lines))
-	case term.KeyRight:
-		m.diffLeft += 8
 	case term.KeyCtrl:
 		switch k.Rune {
 		case 'n':
@@ -373,9 +381,9 @@ func (m *Model) updateDiff(k term.Key) Action {
 		case 'G':
 			m.scrollDiff(len(m.lines))
 		case 'h':
-			m.diffLeft = max(0, m.diffLeft-8)
+			m.panDiff(-8)
 		case 'l':
-			m.diffLeft += 8
+			m.panDiff(8)
 		case '0':
 			m.diffLeft = 0
 		}
@@ -451,6 +459,12 @@ func (m *Model) keepSelectionVisible() {
 		m.listTop = m.sel - rows + 1
 	}
 	m.listTop = max(0, min(m.listTop, max(0, len(m.visible)-rows)))
+}
+
+// panDiff shifts the diff sideways by delta columns, never past the end
+// of its longest line.
+func (m *Model) panDiff(delta int) {
+	m.diffLeft = min(max(m.diffLeft+delta, 0), max(0, m.widest-1))
 }
 
 // scrollDiff moves the diff viewport by delta lines, clamped to the

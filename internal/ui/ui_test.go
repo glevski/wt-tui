@@ -203,9 +203,16 @@ func TestActions(t *testing.T) {
 	if m.Focus != PaneList {
 		t.Error("/ did not return to the list")
 	}
+	// The arrows pan the diff and never move the keyboard between panes.
+	key, _ = m.WantedDiff()
+	m.SetDiff(key, &repo.Diff{Lines: []string{strings.Repeat("x", 100)}})
 	press(m, term.Key{Kind: term.KeyRight})
-	if m.Focus != PaneDiff {
-		t.Error("→ did not focus the diff")
+	if m.Focus != PaneList || m.diffLeft != 8 {
+		t.Errorf("→ in the list: focus %v, pan %d", m.Focus, m.diffLeft)
+	}
+	press(m, term.Key{Kind: term.KeyTab}, term.Key{Kind: term.KeyLeft})
+	if m.Focus != PaneDiff || m.diffLeft != 0 {
+		t.Errorf("← in the diff: focus %v, pan %d", m.Focus, m.diffLeft)
 	}
 	press(m, term.Key{Kind: term.KeyEsc})
 	if m.Focus != PaneList {
@@ -328,8 +335,8 @@ func TestDiffModesAndScrolling(t *testing.T) {
 		t.Error("k scrolled above the top")
 	}
 	press(m, term.Char('l'), term.Char('l'), term.Char('h'))
-	if m.diffLeft != 8 {
-		t.Errorf("pan = %d", m.diffLeft)
+	if m.diffLeft != 0 {
+		t.Errorf("pan = %d: lines are 4 columns wide, nothing to pan to", m.diffLeft)
 	}
 	press(m, term.Char('0'))
 	if m.diffLeft != 0 {

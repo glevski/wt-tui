@@ -44,6 +44,7 @@ Keys:
                     (wt link -r); Enter opens it here, Esc closes
   Esc               clear the filter; with none, quit      ^c  quit
   ^d ^u  ^f ^b      scroll the diff by half / full page    ^e ^y  by line
+  ← →               pan the diff sideways
   ^t                toggle the diff: uncommitted changes (git diff HEAD)
                     or what the branch adds over its base (base...HEAD)
   ^g                open the diff in git's own pager (core.pager)
